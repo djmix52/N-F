@@ -1008,13 +1008,11 @@ def create_result_buttons(nftoken_data=None):
         pc_btn = InlineKeyboardButton("💻 PC Login", url=f"https://netflix.com/login?nftoken={token}")
         phone_btn = InlineKeyboardButton("📱 Phone Login", url=f"https://netflix.com/unsupported?nftoken={token}")
         keyboard.add(pc_btn, phone_btn)
-        # تم إزالة زر Copy Text
     
     return keyboard
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
-    # تم إزالة وظيفة النسخ
     pass
 
 # ==========================================
@@ -1478,8 +1476,9 @@ def process_file_in_thread(chat_id, bundles, status_msg_id, is_text_input=False)
                 files_sent = True
                 file_content = "\n\n\n\n".join([acc_text for acc_text, _ in accounts])
                 doc = io.BytesIO(file_content.encode('utf-8', errors='replace'))
-                doc.name = f"Hits_{plan_name}.txt"
-                bot.send_document(chat_id, doc, caption=f"📁 <b>{plan_name} Accounts</b> ({len(accounts)})", parse_mode="HTML")
+                # الأسماء الجديدة للملفات
+                doc.name = f"{plan_name.upper()}_ACCOUNTS.txt"
+                bot.send_document(chat_id, doc, caption=f"📁 <b>{plan_name.upper()} ACCOUNTS</b> ({len(accounts)})", parse_mode="HTML")
         
         if not files_sent: 
             bot.send_message(chat_id, "⚠️ No working accounts were found.", parse_mode="HTML")
