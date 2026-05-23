@@ -28,6 +28,85 @@ if not BOT_TOKEN:
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
 # ==========================================
+# Owner & Admin Configuration
+# ==========================================
+# المطور الرئيسي (صاحب البوت) - فقط من يمكنه استخدام /addadmin و /listadmins
+OWNER_USER_IDS = [6889113186]  # ضع معرف التليجرام الخاص بك هنا فقط
+
+# قائمة المشرفين الذين لديهم صلاحيات غير محدودة
+ADMIN_USER_IDS = []  # سيتم إضافتهم عبر /addadmin
+ADMIN_USERNAMES = []  # سيتم إضافتهم عبر /addadmin
+
+MAX_CHECKS_PER_DAY = 5
+user_checks = {}  # {user_id: {'count': 5, 'reset_date': '2025-01-01'}}
+
+def is_admin(user_id, username=None):
+    """التحقق إذا كان المستخدم مطوراً (له صلاحيات غير محدودة)"""
+    # المطور الرئيسي (صاحب البوت) دائماً له صلاحيات
+    if user_id in OWNER_USER_IDS:
+        return True
+    # المشرفين المضافين عبر /addadmin
+    if user_id in ADMIN_USER_IDS:
+        return True
+    if username and username in ADMIN_USERNAMES:
+        return True
+    return False
+
+def is_owner(user_id):
+    """التحقق إذا كان المستخدم هو صاحب البوت (المطور الرئيسي)"""
+    return user_id in OWNER_USER_IDS
+
+def can_user_check(user_id, username=None):
+    """التحقق من عدد المحاولات المتبقية للمستخدم"""
+    # المطورين لا يوجد لديهم حد
+    if is_admin(user_id, username):
+        return True, float('inf')
+    
+    today = datetime.now().date().isoformat()
+    
+    if user_id not in user_checks:
+        user_checks[user_id] = {'count': 0, 'reset_date': today}
+        return True, MAX_CHECKS_PER_DAY
+    
+    if user_checks[user_id]['reset_date'] != today:
+        user_checks[user_id] = {'count': 0, 'reset_date': today}
+        return True, MAX_CHECKS_PER_DAY
+    
+    remaining = MAX_CHECKS_PER_DAY - user_checks[user_id]['count']
+    
+    if remaining <= 0:
+        return False, 0
+    
+    return True, remaining
+
+def increment_user_check(user_id, username=None):
+    """زيادة عداد المحاولات للمستخدم"""
+    # المطورين لا يتم تسجيل محاولاتهم
+    if is_admin(user_id, username):
+        return
+    
+    today = datetime.now().date().isoformat()
+    
+    if user_id not in user_checks:
+        user_checks[user_id] = {'count': 1, 'reset_date': today}
+    elif user_checks[user_id]['reset_date'] != today:
+        user_checks[user_id] = {'count': 1, 'reset_date': today}
+    else:
+        user_checks[user_id]['count'] += 1
+
+def get_remaining_checks(user_id, username=None):
+    """الحصول على عدد المحاولات المتبقية للمستخدم"""
+    if is_admin(user_id, username):
+        return "Unlimited ♾️"
+    
+    today = datetime.now().date().isoformat()
+    
+    if user_id not in user_checks or user_checks[user_id]['reset_date'] != today:
+        return MAX_CHECKS_PER_DAY
+    
+    return MAX_CHECKS_PER_DAY - user_checks[user_id]['count']
+
+# ==========================================
 # Checker Configurations (In-Memory)
 # ==========================================
 BOT_CONFIG = {
@@ -845,6 +924,9 @@ def setup_bot_commands():
         BotCommand("start", "🏠 Show menu"),
         BotCommand("help", "❓ Instructions"),
         BotCommand("stats", "📊 Statistics"),
+        BotCommand("limit", "📅 Remaining checks today"),
+        BotCommand("addadmin", "👑 Add admin (Owner only)"),
+        BotCommand("listadmins", "📋 List all admins (Owner only)"),
         BotCommand("cancel", "🛑 Stop task")
     ])
 
@@ -909,6 +991,88 @@ def build_status_message(stats, total, start_time):
     )
 
 # ==========================================
+# أوامر المشرفين (للمطور الرئيسي فقط)
+# ==========================================
+@bot.message_handler(commands=['addadmin'])
+def add_admin(message: Message):
+    user_id = message.from_user.id
+    
+    # التحقق من أن المستخدم هو المطور الرئيسي (صاحب البوت)
+    if not is_owner(user_id):
+        bot.reply_to(message, "❌ <b>Access Denied!</b>\n\nOnly the bot owner can use this command.", parse_mode="HTML")
+        return
+    
+    global ADMIN_USER_IDS, ADMIN_USERNAMES
+    
+    try:
+        command_parts = message.text.split()
+        if len(command_parts) < 2:
+            bot.reply_to(message, f"❌ <b>Usage:</b>\n\n<code>/addadmin &lt;user_id&gt; or @username</code>\n\nExample:\n<code>/addadmin 123456789</code>\n<code>/addadmin @EyadZaen</code>", parse_mode="HTML")
+            return
+        
+        target = command_parts[1]
+        
+        # إذا كان المستخدم مدخل يوزرنيم (يبدأ بـ @)
+        if target.startswith('@'):
+            username = target[1:]  # إزالة علامة @
+            if username not in ADMIN_USERNAMES:
+                ADMIN_USERNAMES.append(username)
+                bot.reply_to(message, f"✅ <b>Admin Added!</b>\n\nUsername <code>@{username}</code> has been granted <b>unlimited checks</b>.", parse_mode="HTML")
+            else:
+                bot.reply_to(message, f"⚠️ <code>@{username}</code> is already an admin.", parse_mode="HTML")
+        else:
+            # إذا كان المستخدم مدخل معرف رقمي
+            try:
+                new_admin_id = int(target)
+                if new_admin_id not in ADMIN_USER_IDS:
+                    ADMIN_USER_IDS.append(new_admin_id)
+                    bot.reply_to(message, f"✅ <b>Admin Added!</b>\n\nUser ID <code>{new_admin_id}</code> has been granted <b>unlimited checks</b>.", parse_mode="HTML")
+                else:
+                    bot.reply_to(message, f"⚠️ User ID <code>{new_admin_id}</code> is already an admin.", parse_mode="HTML")
+            except ValueError:
+                bot.reply_to(message, f"❌ Invalid input! Please provide a valid user ID or username starting with @.", parse_mode="HTML")
+                
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {str(e)}", parse_mode="HTML")
+
+@bot.message_handler(commands=['listadmins'])
+def list_admins(message: Message):
+    user_id = message.from_user.id
+    
+    # التحقق من أن المستخدم هو المطور الرئيسي
+    if not is_owner(user_id):
+        bot.reply_to(message, "❌ <b>Access Denied!</b>\n\nOnly the bot owner can use this command.", parse_mode="HTML")
+        return
+    
+    admin_list = "👑 <b>Current Admins (Unlimited Checks)</b>\n\n"
+    
+    if ADMIN_USER_IDS:
+        admin_list += "📌 <b>By User ID:</b>\n"
+        for aid in ADMIN_USER_IDS:
+            admin_list += f"   • <code>{aid}</code>\n"
+    
+    if ADMIN_USERNAMES:
+        admin_list += "\n📌 <b>By Username:</b>\n"
+        for uname in ADMIN_USERNAMES:
+            admin_list += f"   • @{uname}\n"
+    
+    if not ADMIN_USER_IDS and not ADMIN_USERNAMES:
+        admin_list += "   No admins added yet.\n"
+    
+    admin_list += "\n💡 <b>Note:</b> Owner always has unlimited access by default."
+    
+    bot.reply_to(message, admin_list, parse_mode="HTML")
+
+# ==========================================
+# أمر مؤقت لمعرفة معرف المستخدم
+# ==========================================
+@bot.message_handler(commands=['myid'])
+def show_my_id(message: Message):
+    user_id = message.from_user.id
+    username = message.from_user.username
+    bot.reply_to(message, f"🆔 <b>Your ID:</b> <code>{user_id}</code>\n👤 <b>Username:</b> @{username if username else 'None'}", parse_mode="HTML")
+
+# ==========================================
 # رسالة الترحيب (لـ /start) - بدون فواصل
 # ==========================================
 @bot.message_handler(commands=['start'])
@@ -934,6 +1098,9 @@ def send_welcome(message: Message):
 /start - 🏠 Show this menu
 /help - ❓ Get help & instructions  
 /stats - 📊 View bot statistics
+/limit - 📅 Remaining checks today
+/addadmin - 👑 Add admin (Owner only)
+/listadmins - 📋 List all admins (Owner only)
 /cancel - 🛑 Stop current task
 
 ⚡ <b>Features:</b>
@@ -972,6 +1139,9 @@ Copy your cookies and paste them directly in the chat
 /start - 🏠 Show welcome message
 /help - ❓ Show this help guide
 /stats - 📊 View bot statistics
+/limit - 📅 Remaining checks today
+/addadmin - 👑 Add admin (Owner only)
+/listadmins - 📋 List all admins (Owner only)
 /cancel - 🛑 Stop current task
 
 📁 <b>What you'll get:</b>
@@ -997,7 +1167,72 @@ Copy your cookies and paste them directly in the chat
 
 @bot.message_handler(commands=['stats'])
 def show_stats(message: Message):
-    bot.reply_to(message, "📊 <b>Bot Statistics:</b>\n\nCurrently, the bot is running entirely in-memory and ready to process files directly. Send a file or paste cookies to get started!", parse_mode="HTML")
+    user = message.from_user
+    user_id = user.id
+    username = user.username
+    remaining = get_remaining_checks(user_id, username)
+    
+    if is_admin(user_id, username):
+        admin_tag = " 👑 (Admin - Unlimited)"
+    else:
+        admin_tag = ""
+    
+    stats_text = f"""
+📊 <b>Bot Statistics</b>{admin_tag}
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+📅 <b>Your Daily Limit:</b>
+• Maximum checks per day: <code>{MAX_CHECKS_PER_DAY if not is_admin(user_id, username) else 'Unlimited ♾️'}</code>
+• Remaining today: <code>{remaining}</code>
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+⚡ <b>Bot Status:</b>
+• Running entirely in-memory
+• No proxies needed
+• Ready to process files
+
+📤 Send a file or paste cookies to get started!
+"""
+    bot.reply_to(message, stats_text, parse_mode="HTML")
+
+@bot.message_handler(commands=['limit'])
+def show_limit(message: Message):
+    user = message.from_user
+    user_id = user.id
+    username = user.username
+    remaining = get_remaining_checks(user_id, username)
+    
+    if is_admin(user_id, username):
+        limit_text = f"""
+👑 <b>Admin Access</b>
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+✅ <b>You have UNLIMITED checks!</b>
+♾️ No daily restrictions apply.
+
+💡 Use /stats for more information
+"""
+    else:
+        used = MAX_CHECKS_PER_DAY - (remaining if isinstance(remaining, int) else MAX_CHECKS_PER_DAY)
+        limit_text = f"""
+📊 <b>Your Daily Usage</b>
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+✅ <b>Used today:</b> <code>{used}</code>
+📅 <b>Remaining today:</b> <code>{remaining}</code>
+🔢 <b>Maximum per day:</b> <code>{MAX_CHECKS_PER_DAY}</code>
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+🔄 Limit resets at <b>midnight UTC</b>
+
+💡 Use /stats for more information
+"""
+    bot.reply_to(message, limit_text, parse_mode="HTML")
 
 @bot.message_handler(commands=['cancel'])
 def cancel_task(message: Message):
@@ -1023,6 +1258,13 @@ def handle_text_cookies(message: Message):
         bot.reply_to(message, "⚠️ A task is already running. Please wait for it to finish or use /cancel to stop it.", parse_mode="HTML")
         return
     
+    # التحقق من عدد المحاولات
+    user = message.from_user
+    can_check, remaining = can_user_check(user.id, user.username)
+    if not can_check:
+        bot.reply_to(message, f"⚠️ <b>Daily limit reached!</b>\n\nYou have used all {MAX_CHECKS_PER_DAY} checks for today.\nPlease try again tomorrow.\n\n🔄 Limit resets at midnight UTC.", parse_mode="HTML")
+        return
+    
     if "NetflixId" in text or ".netflix.com" in text:
         bot.reply_to(message, "📥 Processing cookies from text... Results will appear as interactive messages.", parse_mode="HTML")
         
@@ -1031,6 +1273,9 @@ def handle_text_cookies(message: Message):
         if not bundles:
             bot.reply_to(message, "❌ No valid cookies found in the text.\n\nMake sure the cookies are in Netscape format or contain NetflixId.", parse_mode="HTML")
             return
+        
+        # زيادة عداد المحاولات
+        increment_user_check(user.id, user.username)
         
         initial_stats = {'processed': 0, 'valid': 0, 'premium': 0, 'standard': 0, 'basic': 0, 'free': 0, 'invalid': 0}
         status_msg = bot.send_message(chat_id, build_status_message(initial_stats, len(bundles), time.time()), parse_mode="HTML")
@@ -1195,6 +1440,13 @@ def handle_docs(message: Message):
             bot.reply_to(message, "❌ Invalid file format. Please send a `.txt`, `.json`, or `.zip` file.", parse_mode="HTML")
             return
 
+        # التحقق من عدد المحاولات
+        user = message.from_user
+        can_check, remaining = can_user_check(user.id, user.username)
+        if not can_check:
+            bot.reply_to(message, f"⚠️ <b>Daily limit reached!</b>\n\nYou have used all {MAX_CHECKS_PER_DAY} checks for today.\nPlease try again tomorrow.\n\n🔄 Limit resets at midnight UTC.", parse_mode="HTML")
+            return
+
         bot.reply_to(message, "📥 Loading file into memory... Please wait.", parse_mode="HTML")
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
@@ -1217,6 +1469,9 @@ def handle_docs(message: Message):
         if not bundles:
             bot.reply_to(message, "❌ No valid cookies found in the file.", parse_mode="HTML")
             return
+
+        # زيادة عداد المحاولات
+        increment_user_check(user.id, user.username)
 
         initial_stats = {'processed': 0, 'valid': 0, 'premium': 0, 'standard': 0, 'basic': 0, 'free': 0, 'invalid': 0}
         status_msg = bot.send_message(chat_id, build_status_message(initial_stats, len(bundles), time.time()), parse_mode="HTML")
