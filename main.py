@@ -42,10 +42,8 @@ user_checks = {}  # {user_id: {'count': 5, 'reset_date': '2025-01-01'}}
 
 def is_admin(user_id, username=None):
     """التحقق إذا كان المستخدم مطوراً (له صلاحيات غير محدودة)"""
-    # المطور الرئيسي (صاحب البوت) دائماً له صلاحيات
     if user_id in OWNER_USER_IDS:
         return True
-    # المشرفين المضافين عبر /addadmin
     if user_id in ADMIN_USER_IDS:
         return True
     if username and username in ADMIN_USERNAMES:
@@ -58,7 +56,6 @@ def is_owner(user_id):
 
 def can_user_check(user_id, username=None):
     """التحقق من عدد المحاولات المتبقية للمستخدم"""
-    # المطورين لا يوجد لديهم حد
     if is_admin(user_id, username):
         return True, float('inf')
     
@@ -81,7 +78,6 @@ def can_user_check(user_id, username=None):
 
 def increment_user_check(user_id, username=None):
     """زيادة عداد المحاولات للمستخدم"""
-    # المطورين لا يتم تسجيل محاولاتهم
     if is_admin(user_id, username):
         return
     
@@ -363,7 +359,10 @@ def decode_netflix_value(value):
 def extract_first_match(response_text, patterns, flags=0):
     for pattern in patterns:
         match = re.search(pattern, response_text, flags)
-        if match: return decode_netflix_value(match.group(1))
+        if match: 
+            decoded = decode_netflix_value(match.group(1))
+            if decoded:
+                return decoded
     return None
 
 def parse_boolean_value(value):
@@ -479,7 +478,8 @@ def parse_localized_date(cleaned):
 
 def format_display_date(value):
     cleaned = decode_netflix_value(value)
-    if not cleaned: return "UNKNOWN"
+    if not cleaned: 
+        return "Not available"
     parsed = parse_localized_date(cleaned)
     return parsed.strftime("%B %d, %Y").replace(" 0", " ") if parsed else cleaned
 
@@ -562,6 +562,14 @@ def extract_info_from_graphql_payload(response_text):
             phone_number = decode_netflix_value(phone_data.get("value") or phone_data.get("number") or phone_data.get("phoneNumber"))
 
     video_quality = decode_netflix_value(c_plan.get("videoQuality")) or decode_netflix_value(n_plan.get("videoQuality"))
+    
+    # جلب طريقة الدفع من GraphQL
+    payment_method = None
+    if pay_m:
+        payment_method = decode_netflix_value(pay_m.get("paymentOptionLogo", {}).get("paymentOptionLogo") or 
+                                              pay_m.get("displayText") or 
+                                              pay_m.get("type") or 
+                                              growth.get("payer"))
 
     info = {
         "accountOwnerName": decode_netflix_value(prof.get("name")),
@@ -573,7 +581,7 @@ def extract_info_from_graphql_payload(response_text):
         "membershipStatus": decode_netflix_value(growth.get("membershipStatus")),
         "localizedPlanName": decode_netflix_value(c_plan.get("name") or n_plan.get("name")),
         "planPrice": _extract_price(c_plan) or _extract_price(n_plan),
-        "paymentMethodType": decode_netflix_value(pay_m.get("paymentOptionLogo", {}).get("paymentOptionLogo") or growth.get("payer") or pay_m.get("displayText")),
+        "paymentMethodType": payment_method,
         "videoQuality": video_quality,
         "emailVerified": format_boolean_label(email_verified),
         "holdStatus": hold_status,
@@ -585,50 +593,98 @@ def extract_info_from_graphql_payload(response_text):
 
 def extract_info(response_text):
     graphql_info = extract_info_from_graphql_payload(response_text)
-    if has_complete_account_info(graphql_info):
-        extracted = dict(graphql_info)
-    else:
-        phone_patterns = [
-            r'"phoneNumber"\s*:\s*"([^"]+)"',
-            r'"phoneNumber"\s*:\s*\{\s*"fieldType"\s*:\s*"String"\s*,\s*"value"\s*:\s*"([^"]+)"',
-            r'"phoneNumberDigits"\s*:\s*\{\s*"value"\s*:\s*"([^"]+)"',
-            r'"phone"\s*:\s*"([^"]+)"',
-            r'"mobileNumber"\s*:\s*"([^"]+)"',
-            r'"phoneNumber"\s*:\s*\{[^{}]*"value"\s*:\s*"([^"]+)"',
-            r'"phoneNumberDisplay"\s*:\s*"([^"]+)"',
-            r'"contactNumber"\s*:\s*"([^"]+)"',
-            r'"phone"\s*:\s*\{\s*"value"\s*:\s*"([^"]+)"',
-        ]
-        
-        video_patterns = [
-            r'"videoQuality"\s*:\s*"([^"]+)"',
-            r'"quality"\s*:\s*"([^"]+)"',
-            r'"maxVideoQuality"\s*:\s*"([^"]+)"',
-            r'"playbackQuality"\s*:\s*"([^"]+)"',
-            r'"videoQuality"\s*:\s*\{\s*"value"\s*:\s*"([^"]+)"',
-        ]
-        
-        extracted = {
-            "accountOwnerName": extract_first_match(response_text, [r'"accountOwnerName"\s*:\s*"([^"]+)"', r'"firstName"\s*:\s*"([^"]+)"', r'"name"\s*:\s*"([^"]+)"']),
-            "email": extract_first_match(response_text, [r'"emailAddress"\s*:\s*"([^"]+)"', r'"email"\s*:\s*"([^"]+)"']),
-            "countryOfSignup": extract_first_match(response_text, [r'"currentCountry"\s*:\s*"([^"]+)"', r'"countryOfSignup":\s*"([^"]+)"', r'"country"\s*:\s*"([^"]+)"']),
-            "memberSince": extract_first_match(response_text, [r'"memberSince":\s*"([^"]+)"']),
-            "nextBillingDate": extract_first_match(response_text, [r'"nextBillingDate"\s*:\s*"([^"]+)"', r'"date"\s*:\s*"([^"]+)"']),
-            "userGuid": extract_first_match(response_text, [r'"userGuid":\s*"([^"]+)"']),
-            "membershipStatus": extract_first_match(response_text, [r'"membershipStatus":\s*"([^"]+)"']),
-            "maxStreams": extract_first_match(response_text, [r'maxStreams":\{"fieldType":"Numeric","value":\s*(\d+)', r'"maxStreams"\s*:\s*"?(\d+)"?', r'screens":\s*(\d+)']),
-            "localizedPlanName": extract_first_match(response_text, [r'"localizedPlanName"\s*:\s*"([^"]+)"', r'localizedPlanName":\{"fieldType":"String","value":"([^"]+)"', r'"planName"\s*:\s*"([^"]+)"']),
-            "planPrice": extract_first_match(response_text, [r'"planPriceDisplay"\s*:\s*"([^"]+)"']),
-            "videoQuality": extract_first_match(response_text, video_patterns),
-            "paymentMethodType": extract_first_match(response_text, [r'"paymentMethodType"\s*:\s*"([^"]+)"', r'"paymentType"\s*:\s*"([^"]+)"', r'"paymentMethodName"\s*:\s*"([^"]+)"', r'"paymentOptionLogo"\s*:\s*"([^"]+)"', r'"paymentMethod"\s*:\s*"([^"]+)"']),
-            "phoneNumber": extract_first_match(response_text, phone_patterns),
-            "holdStatus": extract_bool_value(response_text, [r'"holdStatus"\s*:\s*(true|false)', r'"isUserOnHold"\s*:\s*(true|false)']),
-            "showExtraMemberSection": extract_bool_value(response_text, [r'"showExtraMemberSection"\s*:\s*(true|false)']),
-            "emailVerified": extract_bool_value(response_text, [r'"emailVerified"\s*:\s*(true|false)']),
-            "profiles": extract_profile_names(response_text),
-        }
-        extracted = merge_info(graphql_info, extracted)
-
+    
+    # أنماط متعددة للبحث
+    next_billing_patterns = [
+        r'"nextBillingDate"\s*:\s*"([^"]+)"',
+        r'"nextBillDate"\s*:\s*"([^"]+)"',
+        r'"billingDate"\s*:\s*"([^"]+)"',
+        r'"nextBilling"\s*:\s*"([^"]+)"',
+        r'"date"\s*:\s*"([^"]+)"',
+        r'"nextBillingDate"\s*:\s*\{\s*"value"\s*:\s*"([^"]+)"',
+        r'"renewalDate"\s*:\s*"([^"]+)"',
+        r'"expiryDate"\s*:\s*"([^"]+)"',
+        r'"endDate"\s*:\s*"([^"]+)"'
+    ]
+    
+    payment_patterns = [
+        r'"paymentMethodType"\s*:\s*"([^"]+)"',
+        r'"paymentType"\s*:\s*"([^"]+)"',
+        r'"paymentMethodName"\s*:\s*"([^"]+)"',
+        r'"paymentOptionLogo"\s*:\s*"([^"]+)"',
+        r'"paymentMethod"\s*:\s*"([^"]+)"',
+        r'"method"\s*:\s*"([^"]+)"',
+        r'"cardType"\s*:\s*"([^"]+)"',
+        r'"payer"\s*:\s*"([^"]+)"',
+        r'"billingMethod"\s*:\s*"([^"]+)"',
+        r'"billingType"\s*:\s*"([^"]+)"'
+    ]
+    
+    phone_patterns = [
+        r'"phoneNumber"\s*:\s*"([^"]+)"',
+        r'"phoneNumber"\s*:\s*\{\s*"fieldType"\s*:\s*"String"\s*,\s*"value"\s*:\s*"([^"]+)"',
+        r'"phoneNumberDigits"\s*:\s*\{\s*"value"\s*:\s*"([^"]+)"',
+        r'"phone"\s*:\s*"([^"]+)"',
+        r'"mobileNumber"\s*:\s*"([^"]+)"',
+        r'"phoneNumber"\s*:\s*\{[^{}]*"value"\s*:\s*"([^"]+)"',
+        r'"phoneNumberDisplay"\s*:\s*"([^"]+)"',
+        r'"contactNumber"\s*:\s*"([^"]+)"',
+        r'"phone"\s*:\s*\{\s*"value"\s*:\s*"([^"]+)"',
+        r'"mobile"\s*:\s*"([^"]+)"',
+        r'"tel"\s*:\s*"([^"]+)"'
+    ]
+    
+    video_patterns = [
+        r'"videoQuality"\s*:\s*"([^"]+)"',
+        r'"quality"\s*:\s*"([^"]+)"',
+        r'"maxVideoQuality"\s*:\s*"([^"]+)"',
+        r'"playbackQuality"\s*:\s*"([^"]+)"',
+        r'"videoQuality"\s*:\s*\{\s*"value"\s*:\s*"([^"]+)"',
+    ]
+    
+    extracted = {
+        "accountOwnerName": extract_first_match(response_text, [r'"accountOwnerName"\s*:\s*"([^"]+)"', r'"firstName"\s*:\s*"([^"]+)"', r'"name"\s*:\s*"([^"]+)"']),
+        "email": extract_first_match(response_text, [r'"emailAddress"\s*:\s*"([^"]+)"', r'"email"\s*:\s*"([^"]+)"']),
+        "countryOfSignup": extract_first_match(response_text, [r'"currentCountry"\s*:\s*"([^"]+)"', r'"countryOfSignup":\s*"([^"]+)"', r'"country"\s*:\s*"([^"]+)"']),
+        "memberSince": extract_first_match(response_text, [r'"memberSince":\s*"([^"]+)"']),
+        "nextBillingDate": extract_first_match(response_text, next_billing_patterns),
+        "userGuid": extract_first_match(response_text, [r'"userGuid":\s*"([^"]+)"']),
+        "membershipStatus": extract_first_match(response_text, [r'"membershipStatus":\s*"([^"]+)"']),
+        "maxStreams": extract_first_match(response_text, [r'maxStreams":\{"fieldType":"Numeric","value":\s*(\d+)', r'"maxStreams"\s*:\s*"?(\d+)"?', r'screens":\s*(\d+)']),
+        "localizedPlanName": extract_first_match(response_text, [r'"localizedPlanName"\s*:\s*"([^"]+)"', r'localizedPlanName":\{"fieldType":"String","value":"([^"]+)"', r'"planName"\s*:\s*"([^"]+)"']),
+        "planPrice": extract_first_match(response_text, [r'"planPriceDisplay"\s*:\s*"([^"]+)"']),
+        "videoQuality": extract_first_match(response_text, video_patterns),
+        "paymentMethodType": extract_first_match(response_text, payment_patterns),
+        "phoneNumber": extract_first_match(response_text, phone_patterns),
+        "holdStatus": extract_bool_value(response_text, [r'"holdStatus"\s*:\s*(true|false)', r'"isUserOnHold"\s*:\s*(true|false)']),
+        "showExtraMemberSection": extract_bool_value(response_text, [r'"showExtraMemberSection"\s*:\s*(true|false)']),
+        "emailVerified": extract_bool_value(response_text, [r'"emailVerified"\s*:\s*(true|false)']),
+        "profiles": extract_profile_names(response_text),
+    }
+    
+    # دمج البيانات من GraphQL
+    extracted = merge_info(graphql_info, extracted)
+    
+    # إذا كان تاريخ الفاتورة مش موجود، حاول تجيبه من مكان تاني
+    if not extracted.get("nextBillingDate") or extracted.get("nextBillingDate") == "UNKNOWN":
+        membership_date = extract_first_match(response_text, [
+            r'"expirationDate"\s*:\s*"([^"]+)"',
+            r'"endDate"\s*:\s*"([^"]+)"',
+            r'"validUntil"\s*:\s*"([^"]+)"'
+        ])
+        if membership_date:
+            extracted["nextBillingDate"] = membership_date
+    
+    # إذا كان طريقة الدفع مش موجودة، حاول تجيبها من الـ plan
+    if not extracted.get("paymentMethodType") or extracted.get("paymentMethodType") == "UNKNOWN":
+        payment_from_plan = extract_first_match(response_text, [
+            r'"planPriceDisplay"\s*:\s*"([^"]+)"',
+            r'"priceDisplay"\s*:\s*"([^"]+)"'
+        ])
+        if payment_from_plan:
+            extracted["paymentMethodType"] = payment_from_plan
+    
+    # استنتاج جودة الفيديو من اسم الخطة
     if not extracted.get("videoQuality") or extracted.get("videoQuality") == "UNKNOWN":
         plan_name = extracted.get("localizedPlanName", "")
         if plan_name:
@@ -641,7 +697,8 @@ def extract_info(response_text):
                 extracted["videoQuality"] = "480p SD"
             elif "mobile" in plan_lower:
                 extracted["videoQuality"] = "480p (Mobile)"
-
+    
+    # استخراج اللغة
     language = extract_first_match(response_text, [
         r'"preferredLanguage"\s*:\s*\{\s*"fieldType"\s*:\s*"String"\s*,\s*"value"\s*:\s*"([^"]+)"',
         r'"locale"\s*:\s*\{\s*"fieldType"\s*:\s*"String"\s*,\s*"value"\s*:\s*"([^"]+)"',
@@ -650,17 +707,21 @@ def extract_info(response_text):
     ])
     if language:
         extracted['language'] = language.split('-')[0].lower()
-
-    extracted.setdefault("membershipStatus", None)
-    extracted.setdefault("localizedPlanName", None)
+    
+    extracted.setdefault("membershipStatus", "Unknown")
+    extracted.setdefault("localizedPlanName", "Unknown")
     extracted.setdefault("videoQuality", "Not specified")
+    extracted.setdefault("nextBillingDate", None)
+    extracted.setdefault("paymentMethodType", None)
     
     profiles = extracted.get("profiles")
     extracted["profileCount"] = len([n for n in profiles.split(", ") if n]) if profiles else 0
     extracted["profilesDisplay"] = profiles
     
+    # تنظيف رقم الهاتف
     if extracted.get("phoneNumber"):
         phone = str(extracted["phoneNumber"])
+        # استخراج الأرقام فقط
         digits = re.sub(r'\D', '', phone)
         if len(digits) >= 8:
             extracted["phoneNumber"] = phone
@@ -770,8 +831,15 @@ def format_for_telegram(info, is_subscribed, nftoken_data=None):
     country = decode_netflix_value(info.get('countryOfSignup')) or "UNKNOWN"
     language = decode_netflix_value(info.get('language')) or "Not specified"
     member_since = format_member_since(info.get('memberSince'))
+    
     expiry_date = format_display_date(info.get('nextBillingDate'))
-    payment = decode_netflix_value(info.get('paymentMethodType')) or "UNKNOWN"
+    if not expiry_date or expiry_date == "UNKNOWN":
+        expiry_date = "Not available"
+    
+    payment = decode_netflix_value(info.get('paymentMethodType'))
+    if not payment or payment == "UNKNOWN":
+        payment = "Not specified"
+    
     video_quality = decode_netflix_value(info.get('videoQuality')) or "Not specified"
     
     phone = decode_netflix_value(info.get('phoneNumber'))
@@ -839,8 +907,15 @@ def format_for_text_file(info, is_subscribed, nftoken_data=None):
     country = decode_netflix_value(info.get('countryOfSignup')) or "UNKNOWN"
     language = decode_netflix_value(info.get('language')) or "Not specified"
     member_since = format_member_since(info.get('memberSince'))
+    
     expiry_date = format_display_date(info.get('nextBillingDate'))
-    payment = decode_netflix_value(info.get('paymentMethodType')) or "UNKNOWN"
+    if not expiry_date or expiry_date == "UNKNOWN":
+        expiry_date = "Not available"
+    
+    payment = decode_netflix_value(info.get('paymentMethodType'))
+    if not payment or payment == "UNKNOWN":
+        payment = "Not specified"
+    
     video_quality = decode_netflix_value(info.get('videoQuality')) or "Not specified"
     
     phone = decode_netflix_value(info.get('phoneNumber'))
@@ -998,7 +1073,6 @@ def build_status_message(stats, total, start_time):
 def add_admin(message: Message):
     user_id = message.from_user.id
     
-    # التحقق من أن المستخدم هو المطور الرئيسي (صاحب البوت)
     if not is_owner(user_id):
         bot.reply_to(message, "❌ <b>Access Denied!</b>\n\nOnly the bot owner can use this command.", parse_mode="HTML")
         return
@@ -1013,16 +1087,14 @@ def add_admin(message: Message):
         
         target = command_parts[1]
         
-        # إذا كان المستخدم مدخل يوزرنيم (يبدأ بـ @)
         if target.startswith('@'):
-            username = target[1:]  # إزالة علامة @
+            username = target[1:]
             if username not in ADMIN_USERNAMES:
                 ADMIN_USERNAMES.append(username)
                 bot.reply_to(message, f"✅ <b>Admin Added!</b>\n\nUsername <code>@{username}</code> has been granted <b>unlimited checks</b>.", parse_mode="HTML")
             else:
                 bot.reply_to(message, f"⚠️ <code>@{username}</code> is already an admin.", parse_mode="HTML")
         else:
-            # إذا كان المستخدم مدخل معرف رقمي
             try:
                 new_admin_id = int(target)
                 if new_admin_id not in ADMIN_USER_IDS:
@@ -1040,7 +1112,6 @@ def add_admin(message: Message):
 def list_admins(message: Message):
     user_id = message.from_user.id
     
-    # التحقق من أن المستخدم هو المطور الرئيسي
     if not is_owner(user_id):
         bot.reply_to(message, "❌ <b>Access Denied!</b>\n\nOnly the bot owner can use this command.", parse_mode="HTML")
         return
@@ -1074,7 +1145,7 @@ def show_my_id(message: Message):
     bot.reply_to(message, f"🆔 <b>Your ID:</b> <code>{user_id}</code>\n👤 <b>Username:</b> @{username if username else 'None'}", parse_mode="HTML")
 
 # ==========================================
-# رسالة الترحيب (لـ /start) - بدون فواصل
+# رسالة الترحيب (لـ /start)
 # ==========================================
 @bot.message_handler(commands=['start'])
 def send_welcome(message: Message):
@@ -1100,6 +1171,7 @@ def send_welcome(message: Message):
 /help - ❓ Get help & instructions  
 /stats - 📊 View bot statistics
 /limit - 📅 Remaining checks today
+/myid - 🆔 Get your user ID
 /addadmin - 👑 Add admin (Owner only)
 /listadmins - 📋 List all admins (Owner only)
 /cancel - 🛑 Stop current task
@@ -1120,7 +1192,7 @@ def send_welcome(message: Message):
     bot.reply_to(message, welcome_text, parse_mode="HTML")
 
 # ==========================================
-# رسالة المساعدة (لـ /help) - بدون فواصل
+# رسالة المساعدة (لـ /help)
 # ==========================================
 @bot.message_handler(commands=['help'])
 def send_help(message: Message):
@@ -1141,6 +1213,7 @@ Copy your cookies and paste them directly in the chat
 /help - ❓ Show this help guide
 /stats - 📊 View bot statistics
 /limit - 📅 Remaining checks today
+/myid - 🆔 Get your user ID
 /addadmin - 👑 Add admin (Owner only)
 /listadmins - 📋 List all admins (Owner only)
 /cancel - 🛑 Stop current task
@@ -1259,7 +1332,6 @@ def handle_text_cookies(message: Message):
         bot.reply_to(message, "⚠️ A task is already running. Please wait for it to finish or use /cancel to stop it.", parse_mode="HTML")
         return
     
-    # التحقق من عدد المحاولات
     user = message.from_user
     can_check, remaining = can_user_check(user.id, user.username)
     if not can_check:
@@ -1275,7 +1347,6 @@ def handle_text_cookies(message: Message):
             bot.reply_to(message, "❌ No valid cookies found in the text.\n\nMake sure the cookies are in Netscape format or contain NetflixId.", parse_mode="HTML")
             return
         
-        # زيادة عداد المحاولات
         increment_user_check(user.id, user.username)
         
         initial_stats = {'processed': 0, 'valid': 0, 'premium': 0, 'standard': 0, 'basic': 0, 'free': 0, 'invalid': 0}
@@ -1441,7 +1512,6 @@ def handle_docs(message: Message):
             bot.reply_to(message, "❌ Invalid file format. Please send a `.txt`, `.json`, or `.zip` file.", parse_mode="HTML")
             return
 
-        # التحقق من عدد المحاولات
         user = message.from_user
         can_check, remaining = can_user_check(user.id, user.username)
         if not can_check:
@@ -1471,7 +1541,6 @@ def handle_docs(message: Message):
             bot.reply_to(message, "❌ No valid cookies found in the file.", parse_mode="HTML")
             return
 
-        # زيادة عداد المحاولات
         increment_user_check(user.id, user.username)
 
         initial_stats = {'processed': 0, 'valid': 0, 'premium': 0, 'standard': 0, 'basic': 0, 'free': 0, 'invalid': 0}
