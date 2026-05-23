@@ -925,6 +925,7 @@ def setup_bot_commands():
         BotCommand("help", "❓ Instructions"),
         BotCommand("stats", "📊 Statistics"),
         BotCommand("limit", "📅 Remaining checks today"),
+        BotCommand("myid", "🆔 Get your user ID"),
         BotCommand("addadmin", "👑 Add admin (Owner only)"),
         BotCommand("listadmins", "📋 List all admins (Owner only)"),
         BotCommand("cancel", "🛑 Stop task")
