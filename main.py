@@ -563,7 +563,6 @@ def extract_info_from_graphql_payload(response_text):
 
     video_quality = decode_netflix_value(c_plan.get("videoQuality")) or decode_netflix_value(n_plan.get("videoQuality"))
     
-    # جلب طريقة الدفع من GraphQL
     payment_method = None
     if pay_m:
         payment_method = decode_netflix_value(pay_m.get("paymentOptionLogo", {}).get("paymentOptionLogo") or 
@@ -594,7 +593,6 @@ def extract_info_from_graphql_payload(response_text):
 def extract_info(response_text):
     graphql_info = extract_info_from_graphql_payload(response_text)
     
-    # أنماط متعددة للبحث
     next_billing_patterns = [
         r'"nextBillingDate"\s*:\s*"([^"]+)"',
         r'"nextBillDate"\s*:\s*"([^"]+)"',
@@ -662,10 +660,8 @@ def extract_info(response_text):
         "profiles": extract_profile_names(response_text),
     }
     
-    # دمج البيانات من GraphQL
     extracted = merge_info(graphql_info, extracted)
     
-    # إذا كان تاريخ الفاتورة مش موجود، حاول تجيبه من مكان تاني
     if not extracted.get("nextBillingDate") or extracted.get("nextBillingDate") == "UNKNOWN":
         membership_date = extract_first_match(response_text, [
             r'"expirationDate"\s*:\s*"([^"]+)"',
@@ -675,7 +671,6 @@ def extract_info(response_text):
         if membership_date:
             extracted["nextBillingDate"] = membership_date
     
-    # إذا كان طريقة الدفع مش موجودة، حاول تجيبها من الـ plan
     if not extracted.get("paymentMethodType") or extracted.get("paymentMethodType") == "UNKNOWN":
         payment_from_plan = extract_first_match(response_text, [
             r'"planPriceDisplay"\s*:\s*"([^"]+)"',
@@ -684,7 +679,6 @@ def extract_info(response_text):
         if payment_from_plan:
             extracted["paymentMethodType"] = payment_from_plan
     
-    # استنتاج جودة الفيديو من اسم الخطة
     if not extracted.get("videoQuality") or extracted.get("videoQuality") == "UNKNOWN":
         plan_name = extracted.get("localizedPlanName", "")
         if plan_name:
@@ -698,7 +692,6 @@ def extract_info(response_text):
             elif "mobile" in plan_lower:
                 extracted["videoQuality"] = "480p (Mobile)"
     
-    # استخراج اللغة
     language = extract_first_match(response_text, [
         r'"preferredLanguage"\s*:\s*\{\s*"fieldType"\s*:\s*"String"\s*,\s*"value"\s*:\s*"([^"]+)"',
         r'"locale"\s*:\s*\{\s*"fieldType"\s*:\s*"String"\s*,\s*"value"\s*:\s*"([^"]+)"',
@@ -718,10 +711,8 @@ def extract_info(response_text):
     extracted["profileCount"] = len([n for n in profiles.split(", ") if n]) if profiles else 0
     extracted["profilesDisplay"] = profiles
     
-    # تنظيف رقم الهاتف
     if extracted.get("phoneNumber"):
         phone = str(extracted["phoneNumber"])
-        # استخراج الأرقام فقط
         digits = re.sub(r'\D', '', phone)
         if len(digits) >= 8:
             extracted["phoneNumber"] = phone
@@ -1007,7 +998,7 @@ def setup_bot_commands():
     ])
 
 # ==========================================
-# أزرار تفاعلية للنتائج
+# أزرار تفاعلية للنتائج (بدون زر Copy Text)
 # ==========================================
 def create_result_buttons(nftoken_data=None):
     keyboard = InlineKeyboardMarkup(row_width=2)
@@ -1016,19 +1007,15 @@ def create_result_buttons(nftoken_data=None):
         token = nftoken_data['token']
         pc_btn = InlineKeyboardButton("💻 PC Login", url=f"https://netflix.com/login?nftoken={token}")
         phone_btn = InlineKeyboardButton("📱 Phone Login", url=f"https://netflix.com/unsupported?nftoken={token}")
-        copy_btn = InlineKeyboardButton("📋 Copy Text", callback_data="copy_result")
         keyboard.add(pc_btn, phone_btn)
-        keyboard.add(copy_btn)
-    else:
-        copy_btn = InlineKeyboardButton("📋 Copy Text", callback_data="copy_result")
-        keyboard.add(copy_btn)
+        # تم إزالة زر Copy Text
     
     return keyboard
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
-    if call.data == "copy_result":
-        bot.answer_callback_query(call.id, "Tap and hold on the account message above to copy! 📋", show_alert=True)
+    # تم إزالة وظيفة النسخ
+    pass
 
 # ==========================================
 # شريط التقدم - الشكل الأزرق
