@@ -1145,9 +1145,9 @@ def send_welcome(message: Message):
 
 📌 <b>How to use the bot:</b>
 
-1️⃣ Send a <code>.txt</code>, <code>.json</code>, or <code>.zip</code> file containing Netflix cookies
+1️⃣ Send a <code>.txt</code>, <code>.json</code>, or <code>.zip</code> file
 2️⃣ Or paste cookies directly in the chat
-3️⃣ The bot will automatically extract and check all accounts
+3️⃣ The bot will automatically extract and check
 4️⃣ Get detailed information about each account
 
 📋 <b>Bot Commands:</b>
@@ -1170,9 +1170,9 @@ def send_welcome(message: Message):
 ✅ Detailed account information
 ✅ NFTOKEN generation for PC & Phone login
 
-📤 <b>Just send me a file or paste cookies and let me do the magic!</b> ✨
+📤 <b>Just send me a file or paste cookies</b> ✨
 
-💡 <b>Tip:</b> Make sure your cookies are valid and not expired
+💡 <b>Tip:</b> Show this menu
 """
     bot.reply_to(message, welcome_text, parse_mode="HTML")
 
