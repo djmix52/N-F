@@ -846,8 +846,13 @@ def format_for_telegram(info, is_subscribed, nftoken_data=None):
     email_verified = decode_netflix_value(info.get('emailVerified')) or "No"
     
     raw_status = decode_netflix_value(info.get('membershipStatus')) or "UNKNOWN"
+    hold = decode_netflix_value(info.get('holdStatus')) or "No"
+
     if "CURRENT_MEMBER" in raw_status.upper():
-        membership_status = "Active ✅"
+        if hold == "Yes":
+            membership_status = "Hold (Suspended) ⏸️"
+        else:
+            membership_status = "Active ✅"
     elif "FORMER_MEMBER" in raw_status.upper():
         membership_status = "Expired / Inactive ❌"
     else:
@@ -922,8 +927,13 @@ def format_for_text_file(info, is_subscribed, nftoken_data=None):
     email_verified = decode_netflix_value(info.get('emailVerified')) or "No"
     
     raw_status = decode_netflix_value(info.get('membershipStatus')) or "UNKNOWN"
+    hold = decode_netflix_value(info.get('holdStatus')) or "No"
+
     if "CURRENT_MEMBER" in raw_status.upper():
-        membership_status = "Active ✅"
+        if hold == "Yes":
+            membership_status = "Hold (Suspended) ⏸️"
+        else:
+            membership_status = "Active ✅"
     elif "FORMER_MEMBER" in raw_status.upper():
         membership_status = "Expired / Inactive ❌"
     else:
@@ -1145,10 +1155,10 @@ def send_welcome(message: Message):
 
 📌 <b>How to use the bot:</b>
 
-1️⃣ Send a <code>.txt</code>, <code>.json</code>, or <code>.zip</code> file
+1️⃣ Send a <code>.txt</code>, <code>.json</code>, or <code>.zip</code> file containing Netflix cookies
 2️⃣ Or paste cookies directly in the chat
-3️⃣ The bot will automatically extract
-4️⃣ Get detailed information Account
+3️⃣ The bot will automatically extract and check all accounts
+4️⃣ Get detailed information about each account
 
 📋 <b>Bot Commands:</b>
 
@@ -1170,9 +1180,9 @@ def send_welcome(message: Message):
 ✅ Detailed account information
 ✅ NFTOKEN generation for PC & Phone login
 
-📤 <b>Just send me a file or paste cookies</b> ✨
+📤 <b>Just send me a file or paste cookies and let me do the magic!</b> ✨
 
-💡 <b>Tip:</b> Show menu
+💡 <b>Tip:</b> Make sure your cookies are valid and not expired
 """
     bot.reply_to(message, welcome_text, parse_mode="HTML")
 
@@ -1476,7 +1486,6 @@ def process_file_in_thread(chat_id, bundles, status_msg_id, is_text_input=False)
                 files_sent = True
                 file_content = "\n\n\n\n".join([acc_text for acc_text, _ in accounts])
                 doc = io.BytesIO(file_content.encode('utf-8', errors='replace'))
-                # الأسماء الجديدة للملفات
                 doc.name = f"{plan_name.upper()}_ACCOUNTS.txt"
                 bot.send_document(chat_id, doc, caption=f"📁 <b>{plan_name.upper()} ACCOUNTS</b> ({len(accounts)})", parse_mode="HTML")
         
