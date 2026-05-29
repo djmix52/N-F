@@ -1003,6 +1003,7 @@ def setup_bot_commands():
         BotCommand("limit", "📅 Remaining checks today"),
         BotCommand("myid", "🆔 Get your user ID"),
         BotCommand("addadmin", "👑 Add admin (Owner only)"),
+        BotCommand("deladmin", "🗑️ Remove admin (Owner only)"),
         BotCommand("listadmins", "📋 List all admins (Owner only)"),
         BotCommand("cancel", "🛑 Stop task")
     ])
@@ -1103,6 +1104,45 @@ def add_admin(message: Message):
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)}", parse_mode="HTML")
 
+@bot.message_handler(commands=['deladmin'])
+def del_admin(message: Message):
+    user_id = message.from_user.id
+    
+    if not is_owner(user_id):
+        bot.reply_to(message, "❌ <b>Access Denied!</b>\n\nOnly the bot owner can use this command.", parse_mode="HTML")
+        return
+    
+    global ADMIN_USER_IDS, ADMIN_USERNAMES
+    
+    try:
+        command_parts = message.text.split()
+        if len(command_parts) < 2:
+            bot.reply_to(message, f"❌ <b>Usage:</b>\n\n<code>/deladmin &lt;user_id&gt; or @username</code>\n\nExample:\n<code>/deladmin 123456789</code>\n<code>/deladmin @EyadZaen</code>", parse_mode="HTML")
+            return
+        
+        target = command_parts[1]
+        
+        if target.startswith('@'):
+            username = target[1:]
+            if username in ADMIN_USERNAMES:
+                ADMIN_USERNAMES.remove(username)
+                bot.reply_to(message, f"✅ <b>Admin Removed!</b>\n\nUsername <code>@{username}</code> has been removed from admins.", parse_mode="HTML")
+            else:
+                bot.reply_to(message, f"⚠️ <code>@{username}</code> is not an admin.", parse_mode="HTML")
+        else:
+            try:
+                admin_id = int(target)
+                if admin_id in ADMIN_USER_IDS:
+                    ADMIN_USER_IDS.remove(admin_id)
+                    bot.reply_to(message, f"✅ <b>Admin Removed!</b>\n\nUser ID <code>{admin_id}</code> has been removed from admins.", parse_mode="HTML")
+                else:
+                    bot.reply_to(message, f"⚠️ User ID <code>{admin_id}</code> is not an admin.", parse_mode="HTML")
+            except ValueError:
+                bot.reply_to(message, f"❌ Invalid input! Please provide a valid user ID or username starting with @.", parse_mode="HTML")
+                
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {str(e)}", parse_mode="HTML")
+
 @bot.message_handler(commands=['listadmins'])
 def list_admins(message: Message):
     user_id = message.from_user.id
@@ -1145,13 +1185,25 @@ def show_my_id(message: Message):
 @bot.message_handler(commands=['start'])
 def send_welcome(message: Message):
     user_name = message.from_user.first_name or message.from_user.username or "User"
+    user_id = message.from_user.id
+    username = message.from_user.username
+    
+    # معرفة عدد المحاولات المسموحة للمستخدم
+    if is_admin(user_id, username):
+        limit_text = "Unlimited ♾️"
+        admin_badge = " 👑 (Admin)"
+    else:
+        limit_text = f"{MAX_CHECKS_PER_DAY} per day"
+        admin_badge = ""
     
     welcome_text = f"""
 🎬 <b>Netflix Cookies Bot</b> 🍿
 
-✨ <b>Welcome {html.escape(user_name)}!</b> ✨
+✨ <b>Welcome {html.escape(user_name)}!</b>{admin_badge}
 
 👨‍💻 <b>Dev:</b> <code>Eyad Zaen</code>
+
+📊 <b>Your Daily Limit:</b> <code>{limit_text}</code>
 
 📌 <b>How to use the bot:</b>
 
@@ -1168,6 +1220,7 @@ def send_welcome(message: Message):
 /limit - 📅 Remaining checks today
 /myid - 🆔 Get your user ID
 /addadmin - 👑 Add admin (Owner only)
+/deladmin - 🗑️ Remove admin (Owner only)
 /listadmins - 📋 List all admins (Owner only)
 /cancel - 🛑 Stop current task
 
@@ -1180,9 +1233,9 @@ def send_welcome(message: Message):
 ✅ Detailed account information
 ✅ NFTOKEN generation for PC & Phone login
 
-📤 <b>Just send me a file or paste cookies!</b> ✨
+📤 <b>Just send me a file or paste cookies</b> ✨
 
-💡 <b>Tip:</b> Made By Eyad Zaen
+💡 <b>Tip:</b> Made By Eyad
 """
     bot.reply_to(message, welcome_text, parse_mode="HTML")
 
@@ -1210,6 +1263,7 @@ Copy your cookies and paste them directly in the chat
 /limit - 📅 Remaining checks today
 /myid - 🆔 Get your user ID
 /addadmin - 👑 Add admin (Owner only)
+/deladmin - 🗑️ Remove admin (Owner only)
 /listadmins - 📋 List all admins (Owner only)
 /cancel - 🛑 Stop current task
 
