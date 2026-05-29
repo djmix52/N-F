@@ -1029,6 +1029,7 @@ def setup_bot_commands():
         BotCommand("redeem", "🎫 Redeem a key for VIP access"),
         BotCommand("genkey", "🔑 Generate new key (Owner only)"),
         BotCommand("keys", "📋 List active keys (Owner only)"),
+        BotCommand("delkey", "🗑️ Delete a key (Owner only)"),
         BotCommand("addadmin", "👑 Add admin (Owner only)"),
         BotCommand("deladmin", "🗑️ Remove admin (Owner only)"),
         BotCommand("listadmins", "📋 List all admins (Owner only)"),
@@ -1243,6 +1244,33 @@ def list_keys(message: Message):
     
     bot.reply_to(message, keys_list, parse_mode="HTML")
 
+@bot.message_handler(commands=['delkey'])
+def delete_key(message: Message):
+    user_id = message.from_user.id
+    
+    if not is_owner(user_id):
+        bot.reply_to(message, "❌ Access Denied!\n\nOnly the bot owner can delete keys.", parse_mode="HTML")
+        return
+    
+    try:
+        command_parts = message.text.split()
+        if len(command_parts) < 2:
+            bot.reply_to(message, f"❌ Usage:\n\n<code>/delkey &lt;key&gt;</code>\n\nExample: <code>/delkey X7K9-M3P2</code>\n\n💡 Use /keys to see all active keys.", parse_mode="HTML")
+            return
+        
+        key = command_parts[1].upper()
+        
+        if key not in active_keys:
+            bot.reply_to(message, f"❌ Key not found!\n\nKey <code>{key}</code> is not active or has already expired.\n\n💡 Use /keys to see all active keys.", parse_mode="HTML")
+            return
+        
+        del active_keys[key]
+        
+        bot.reply_to(message, f"✅ Key Deleted!\n\n🔑 Key: <code>{key}</code>\n\nThis key can no longer be used by anyone.", parse_mode="HTML")
+        
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {str(e)}", parse_mode="HTML")
+
 @bot.message_handler(commands=['redeem'])
 def redeem_key(message: Message):
     chat_id = message.chat.id
@@ -1342,7 +1370,7 @@ def send_welcome(message: Message):
 
 📌 How to use the bot:
 
-1️⃣ Send a .txt, .json, or .zip file
+1️⃣ Send a .txt, .json, or .zip file 
 2️⃣ Or paste cookies directly in the chat
 3️⃣ The bot will Automatically extract Accounts
 4️⃣ Get detailed information about each Account
@@ -1358,6 +1386,7 @@ def send_welcome(message: Message):
 /redeem - 🎫 Redeem a key for VIP access
 /genkey - 🔑 Generate new key (Owner only)
 /keys - 📋 List active keys (Owner only)
+/delkey - 🗑️ Delete a key (Owner only)
 /addadmin - 👑 Add admin (Owner only)
 /deladmin - 🗑️ Remove admin (Owner only)
 /listadmins - 📋 List all admins (Owner only)
@@ -1406,6 +1435,7 @@ Copy your cookies and paste them directly in the chat
 /redeem - 🎫 Redeem a key for VIP access
 /genkey - 🔑 Generate new key (Owner only)
 /keys - 📋 List active keys (Owner only)
+/delkey - 🗑️ Delete a key (Owner only)
 /addadmin - 👑 Add admin (Owner only)
 /deladmin - 🗑️ Remove admin (Owner only)
 /listadmins - 📋 List all admins (Owner only)
