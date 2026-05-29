@@ -30,15 +30,36 @@ requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 # ==========================================
 # Owner & Admin Configuration
 # ==========================================
-# المطور الرئيسي (صاحب البوت) - فقط من يمكنه استخدام /addadmin و /listadmins
+# المطور الرئيسي (صاحب البوت) - فقط من يمكنه استخدام أوامر الإدارة
 OWNER_USER_IDS = [6889113186]  # ضع معرف التليجرام الخاص بك هنا فقط
 
-# قائمة المشرفين الذين لديهم صلاحيات غير محدودة
-ADMIN_USER_IDS = []  # سيتم إضافتهم عبر /addadmin
-ADMIN_USERNAMES = []  # سيتم إضافتهم عبر /addadmin
+# قائمة المشرفين الدائمين (لن تنتهي صلاحيتهم)
+ADMIN_USER_IDS = []
+ADMIN_USERNAMES = []
 
 MAX_CHECKS_PER_DAY = 5
-user_checks = {}  # {user_id: {'count': 5, 'reset_date': '2025-01-01'}}
+user_checks = {}
+
+# ==========================================
+# VIP Keys System (Temporary Admin for 6 hours)
+# ==========================================
+active_keys = {}  # {key: expiry_timestamp}
+temp_admins = {}  # {user_id: expiry_timestamp}
+
+def generate_key():
+    """توليد كود عشوائي مكون من 8 أحرف وأرقام"""
+    part1 = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    part2 = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    return f"{part1}-{part2}"
+
+def is_temp_admin(user_id):
+    """التحقق إذا كان المستخدم VIP مؤقت"""
+    if user_id in temp_admins:
+        if time.time() < temp_admins[user_id]:
+            return True
+        else:
+            del temp_admins[user_id]
+    return False
 
 def is_admin(user_id, username=None):
     """التحقق إذا كان المستخدم مطوراً (له صلاحيات غير محدودة)"""
@@ -47,6 +68,8 @@ def is_admin(user_id, username=None):
     if user_id in ADMIN_USER_IDS:
         return True
     if username and username in ADMIN_USERNAMES:
+        return True
+    if is_temp_admin(user_id):
         return True
     return False
 
@@ -1002,6 +1025,10 @@ def setup_bot_commands():
         BotCommand("stats", "📊 Statistics"),
         BotCommand("limit", "📅 Remaining checks today"),
         BotCommand("myid", "🆔 Get your user ID"),
+        BotCommand("myadmin", "⭐ Check your admin status"),
+        BotCommand("redeem", "🎫 Redeem a key for VIP access"),
+        BotCommand("genkey", "🔑 Generate new key (Owner only)"),
+        BotCommand("keys", "📋 List active keys (Owner only)"),
         BotCommand("addadmin", "👑 Add admin (Owner only)"),
         BotCommand("deladmin", "🗑️ Remove admin (Owner only)"),
         BotCommand("listadmins", "📋 List all admins (Owner only)"),
@@ -1070,7 +1097,7 @@ def add_admin(message: Message):
     user_id = message.from_user.id
     
     if not is_owner(user_id):
-        bot.reply_to(message, "❌ <b>Access Denied!</b>\n\nOnly the bot owner can use this command.", parse_mode="HTML")
+        bot.reply_to(message, "❌ Access Denied!\n\nOnly the bot owner can use this command.", parse_mode="HTML")
         return
     
     global ADMIN_USER_IDS, ADMIN_USERNAMES
@@ -1078,7 +1105,7 @@ def add_admin(message: Message):
     try:
         command_parts = message.text.split()
         if len(command_parts) < 2:
-            bot.reply_to(message, f"❌ <b>Usage:</b>\n\n<code>/addadmin &lt;user_id&gt; or @username</code>\n\nExample:\n<code>/addadmin 123456789</code>\n<code>/addadmin @EyadZaen</code>", parse_mode="HTML")
+            bot.reply_to(message, f"❌ Usage:\n\n<code>/addadmin &lt;user_id&gt; or @username</code>\n\nExample:\n<code>/addadmin 123456789</code>\n<code>/addadmin @EyadZaen</code>", parse_mode="HTML")
             return
         
         target = command_parts[1]
@@ -1087,7 +1114,7 @@ def add_admin(message: Message):
             username = target[1:]
             if username not in ADMIN_USERNAMES:
                 ADMIN_USERNAMES.append(username)
-                bot.reply_to(message, f"✅ <b>Admin Added!</b>\n\nUsername <code>@{username}</code> has been granted <b>unlimited checks</b>.", parse_mode="HTML")
+                bot.reply_to(message, f"✅ Admin Added!\n\nUsername <code>@{username}</code> has been granted unlimited checks.", parse_mode="HTML")
             else:
                 bot.reply_to(message, f"⚠️ <code>@{username}</code> is already an admin.", parse_mode="HTML")
         else:
@@ -1095,7 +1122,7 @@ def add_admin(message: Message):
                 new_admin_id = int(target)
                 if new_admin_id not in ADMIN_USER_IDS:
                     ADMIN_USER_IDS.append(new_admin_id)
-                    bot.reply_to(message, f"✅ <b>Admin Added!</b>\n\nUser ID <code>{new_admin_id}</code> has been granted <b>unlimited checks</b>.", parse_mode="HTML")
+                    bot.reply_to(message, f"✅ Admin Added!\n\nUser ID <code>{new_admin_id}</code> has been granted unlimited checks.", parse_mode="HTML")
                 else:
                     bot.reply_to(message, f"⚠️ User ID <code>{new_admin_id}</code> is already an admin.", parse_mode="HTML")
             except ValueError:
@@ -1109,7 +1136,7 @@ def del_admin(message: Message):
     user_id = message.from_user.id
     
     if not is_owner(user_id):
-        bot.reply_to(message, "❌ <b>Access Denied!</b>\n\nOnly the bot owner can use this command.", parse_mode="HTML")
+        bot.reply_to(message, "❌ Access Denied!\n\nOnly the bot owner can use this command.", parse_mode="HTML")
         return
     
     global ADMIN_USER_IDS, ADMIN_USERNAMES
@@ -1117,7 +1144,7 @@ def del_admin(message: Message):
     try:
         command_parts = message.text.split()
         if len(command_parts) < 2:
-            bot.reply_to(message, f"❌ <b>Usage:</b>\n\n<code>/deladmin &lt;user_id&gt; or @username</code>\n\nExample:\n<code>/deladmin 123456789</code>\n<code>/deladmin @EyadZaen</code>", parse_mode="HTML")
+            bot.reply_to(message, f"❌ Usage:\n\n<code>/deladmin &lt;user_id&gt; or @username</code>\n\nExample:\n<code>/deladmin 123456789</code>\n<code>/deladmin @EyadZaen</code>", parse_mode="HTML")
             return
         
         target = command_parts[1]
@@ -1126,7 +1153,7 @@ def del_admin(message: Message):
             username = target[1:]
             if username in ADMIN_USERNAMES:
                 ADMIN_USERNAMES.remove(username)
-                bot.reply_to(message, f"✅ <b>Admin Removed!</b>\n\nUsername <code>@{username}</code> has been removed from admins.", parse_mode="HTML")
+                bot.reply_to(message, f"✅ Admin Removed!\n\nUsername <code>@{username}</code> has been removed from admins.", parse_mode="HTML")
             else:
                 bot.reply_to(message, f"⚠️ <code>@{username}</code> is not an admin.", parse_mode="HTML")
         else:
@@ -1134,7 +1161,7 @@ def del_admin(message: Message):
                 admin_id = int(target)
                 if admin_id in ADMIN_USER_IDS:
                     ADMIN_USER_IDS.remove(admin_id)
-                    bot.reply_to(message, f"✅ <b>Admin Removed!</b>\n\nUser ID <code>{admin_id}</code> has been removed from admins.", parse_mode="HTML")
+                    bot.reply_to(message, f"✅ Admin Removed!\n\nUser ID <code>{admin_id}</code> has been removed from admins.", parse_mode="HTML")
                 else:
                     bot.reply_to(message, f"⚠️ User ID <code>{admin_id}</code> is not an admin.", parse_mode="HTML")
             except ValueError:
@@ -1148,27 +1175,136 @@ def list_admins(message: Message):
     user_id = message.from_user.id
     
     if not is_owner(user_id):
-        bot.reply_to(message, "❌ <b>Access Denied!</b>\n\nOnly the bot owner can use this command.", parse_mode="HTML")
+        bot.reply_to(message, "❌ Access Denied!\n\nOnly the bot owner can use this command.", parse_mode="HTML")
         return
     
-    admin_list = "👑 <b>Current Admins (Unlimited Checks)</b>\n\n"
+    admin_list = "👑 Current Admins (Unlimited Checks)\n\n"
     
     if ADMIN_USER_IDS:
-        admin_list += "📌 <b>By User ID:</b>\n"
+        admin_list += "📌 By User ID:\n"
         for aid in ADMIN_USER_IDS:
             admin_list += f"   • <code>{aid}</code>\n"
     
     if ADMIN_USERNAMES:
-        admin_list += "\n📌 <b>By Username:</b>\n"
+        admin_list += "\n📌 By Username:\n"
         for uname in ADMIN_USERNAMES:
             admin_list += f"   • @{uname}\n"
     
     if not ADMIN_USER_IDS and not ADMIN_USERNAMES:
         admin_list += "   No admins added yet.\n"
     
-    admin_list += "\n💡 <b>Note:</b> Owner always has unlimited access by default."
+    admin_list += "\n💡 Note: Owner always has unlimited access by default.\n\n🔑 VIP keys can be generated with /genkey"
     
     bot.reply_to(message, admin_list, parse_mode="HTML")
+
+# ==========================================
+# VIP Key System Commands
+# ==========================================
+@bot.message_handler(commands=['genkey'])
+def generate_new_key(message: Message):
+    user_id = message.from_user.id
+    
+    if not is_owner(user_id):
+        bot.reply_to(message, "❌ Access Denied!\n\nOnly the bot owner can generate keys.", parse_mode="HTML")
+        return
+    
+    new_key = generate_key()
+    expiry_time = time.time() + (6 * 3600)
+    active_keys[new_key] = expiry_time
+    
+    expiry_date = datetime.fromtimestamp(expiry_time).strftime("%Y-%m-%d %H:%M:%S")
+    
+    bot.reply_to(message, f"🔑 NEW KEY GENERATED\n\n"
+                 f"📌 Key: <code>{new_key}</code>\n"
+                 f"⏰ Valid: 6 hours\n"
+                 f"📅 Expires: <code>{expiry_date}</code>\n\n"
+                 f"📤 Share this key with user:\n<code>/redeem {new_key}</code>", parse_mode="HTML")
+
+@bot.message_handler(commands=['keys'])
+def list_keys(message: Message):
+    user_id = message.from_user.id
+    
+    if not is_owner(user_id):
+        bot.reply_to(message, "❌ Access Denied!\n\nOnly the bot owner can view active keys.", parse_mode="HTML")
+        return
+    
+    if not active_keys:
+        bot.reply_to(message, "📭 No Active Keys\n\nThere are no active keys at the moment.\n\nUse /genkey to generate a new key.", parse_mode="HTML")
+        return
+    
+    keys_list = "🔑 Active Keys\n\n"
+    for key, expiry in active_keys.items():
+        remaining = expiry - time.time()
+        remaining_hours = int(remaining // 3600)
+        remaining_minutes = int((remaining % 3600) // 60)
+        keys_list += f"📌 <code>{key}</code>\n   ⏰ Expires in: {remaining_hours}h {remaining_minutes}m\n\n"
+    
+    keys_list += f"\n📊 Total: {len(active_keys)} active key(s)"
+    
+    bot.reply_to(message, keys_list, parse_mode="HTML")
+
+@bot.message_handler(commands=['redeem'])
+def redeem_key(message: Message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    
+    try:
+        command_parts = message.text.split()
+        if len(command_parts) < 2:
+            bot.reply_to(message, "❌ Usage:\n\n<code>/redeem &lt;key&gt;</code>\n\nExample: <code>/redeem X7K9-M3P2</code>", parse_mode="HTML")
+            return
+        
+        key = command_parts[1].upper()
+        
+        if key not in active_keys:
+            bot.reply_to(message, "❌ INVALID KEY\n\nThe key you entered is not valid or has expired.", parse_mode="HTML")
+            return
+        
+        if time.time() > active_keys[key]:
+            del active_keys[key]
+            bot.reply_to(message, "⏰ KEY EXPIRED\n\nThis key has expired and is no longer valid.\n\n💡 Contact the bot owner for a new key.", parse_mode="HTML")
+            return
+        
+        expiry_time = active_keys[key]
+        temp_admins[user_id] = expiry_time
+        
+        del active_keys[key]
+        
+        expiry_date = datetime.fromtimestamp(expiry_time).strftime("%Y-%m-%d %H:%M:%S")
+        remaining_hours = int((expiry_time - time.time()) // 3600)
+        remaining_minutes = int(((expiry_time - time.time()) % 3600) // 60)
+        
+        bot.reply_to(message, f"🎉 VIP ACTIVATED 🎉\n\n"
+                     f"🔑 Key: <code>{key}</code>\n"
+                     f"⏰ VIP Duration: 6 hours\n"
+                     f"📅 Expires: <code>{expiry_date}</code>\n"
+                     f"⏳ Remaining: {remaining_hours}h {remaining_minutes}m\n\n"
+                     f"✨ You now have UNLIMITED checks!\n\n"
+                     f"💡 Use /myadmin to check VIP status", parse_mode="HTML")
+        
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {str(e)}", parse_mode="HTML")
+
+@bot.message_handler(commands=['myadmin'])
+def my_admin_status(message: Message):
+    user_id = message.from_user.id
+    username = message.from_user.username
+    
+    if is_owner(user_id):
+        status = "👑 Owner (Permanent)\n✨ Unlimited access"
+    elif user_id in ADMIN_USER_IDS or (username and username in ADMIN_USERNAMES):
+        status = "👑 Permanent Admin\n✨ Unlimited access"
+    elif is_temp_admin(user_id):
+        expiry = temp_admins[user_id]
+        remaining = expiry - time.time()
+        remaining_hours = int(remaining // 3600)
+        remaining_minutes = int((remaining % 3600) // 60)
+        status = f"⭐ VIP Member (Temporary)\n⏰ Expires in: {remaining_hours}h {remaining_minutes}m\n✨ Unlimited access active"
+    else:
+        remaining = get_remaining_checks(user_id, username)
+        status = f"👤 Regular User\n🔢 Daily limit: {MAX_CHECKS_PER_DAY}\n📅 Remaining today: {remaining}\n\n💡 Use /redeem <key> for VIP access"
+    
+    bot.reply_to(message, f"📊 YOUR ADMIN STATUS\n\n{status}", parse_mode="HTML")
 
 # ==========================================
 # أمر مؤقت لمعرفة معرف المستخدم
@@ -1177,7 +1313,7 @@ def list_admins(message: Message):
 def show_my_id(message: Message):
     user_id = message.from_user.id
     username = message.from_user.username
-    bot.reply_to(message, f"🆔 <b>Your ID:</b> <code>{user_id}</code>\n👤 <b>Username:</b> @{username if username else 'None'}", parse_mode="HTML")
+    bot.reply_to(message, f"🆔 Your ID: <code>{user_id}</code>\n👤 Username: @{username if username else 'None'}", parse_mode="HTML")
 
 # ==========================================
 # رسالة الترحيب (لـ /start)
@@ -1188,7 +1324,6 @@ def send_welcome(message: Message):
     user_id = message.from_user.id
     username = message.from_user.username
     
-    # معرفة عدد المحاولات المسموحة للمستخدم
     if is_admin(user_id, username):
         limit_text = "Unlimited ♾️"
         admin_badge = " 👑 (Admin)"
@@ -1197,34 +1332,38 @@ def send_welcome(message: Message):
         admin_badge = ""
     
     welcome_text = f"""
-🎬 <b>Netflix Cookies Bot</b> 🍿
+🎬 Netflix Cookies Bot 🍿
 
-✨ <b>Welcome {html.escape(user_name)}!</b>{admin_badge}
+✨ Welcome {html.escape(user_name)}!{admin_badge}
 
-👨‍💻 <b>Dev:</b> <code>Eyad Zaen</code>
+👨‍💻 Dev: Eyad Zaen
 
-📊 <b>Your Daily Limit:</b> <code>{limit_text}</code>
+📊 Your Daily Limit: {limit_text}
 
-📌 <b>How to use the bot:</b>
+📌 How to use the bot:
 
-1️⃣ Send a <code>.txt</code>, <code>.json</code>, or <code>.zip</code> file
+1️⃣ Send a .txt, .json, or .zip file
 2️⃣ Or paste cookies directly in the chat
-3️⃣ The bot will automatically extract Accounts
-4️⃣ Get detailed information about each account
+3️⃣ The bot will Automatically extract Accounts
+4️⃣ Get detailed information about each Account
 
-📋 <b>Bot Commands:</b>
+📋 Bot Commands:
 
 /start - 🏠 Show this menu
 /help - ❓ Get help & instructions  
 /stats - 📊 View bot statistics
 /limit - 📅 Remaining checks today
 /myid - 🆔 Get your user ID
+/myadmin - ⭐ Check your admin status
+/redeem - 🎫 Redeem a key for VIP access
+/genkey - 🔑 Generate new key (Owner only)
+/keys - 📋 List active keys (Owner only)
 /addadmin - 👑 Add admin (Owner only)
 /deladmin - 🗑️ Remove admin (Owner only)
 /listadmins - 📋 List all admins (Owner only)
 /cancel - 🛑 Stop current task
 
-⚡ <b>Features:</b>
+⚡ Features:
 
 ✅ Fast processing (No proxies needed)
 ✅ Pure in-memory (No files saved)
@@ -1232,10 +1371,11 @@ def send_welcome(message: Message):
 ✅ Automatic cookie extraction
 ✅ Detailed account information
 ✅ NFTOKEN generation for PC & Phone login
+✅ VIP system for temporary unlimited access
 
-📤 <b>Just send me a file or paste cookies</b> ✨
+📤 Just send me a file or paste cookies ✨
 
-💡 <b>Tip:</b> Made By Eyad
+💡 Tip: Made By Eyad
 """
     bot.reply_to(message, welcome_text, parse_mode="HTML")
 
@@ -1245,29 +1385,33 @@ def send_welcome(message: Message):
 @bot.message_handler(commands=['help'])
 def send_help(message: Message):
     help_text = """
-❓ <b>Netflix Cookies Bot - Help Guide</b>
+❓ Netflix Cookies Bot - Help Guide
 
-📌 <b>How to use the bot:</b>
+📌 How to use the bot:
 
-<b>Method 1 - Upload file:</b>
-Send a <code>.txt</code>, <code>.json</code>, or <code>.zip</code> file containing Netflix cookies
+Method 1 - Upload file:
+Send a .txt, .json, or .zip file containing Netflix cookies
 
-<b>Method 2 - Paste text:</b>
+Method 2 - Paste text:
 Copy your cookies and paste them directly in the chat
 
-📋 <b>Available Commands:</b>
+📋 Available Commands:
 
 /start - 🏠 Show welcome message
 /help - ❓ Show this help guide
 /stats - 📊 View bot statistics
 /limit - 📅 Remaining checks today
 /myid - 🆔 Get your user ID
+/myadmin - ⭐ Check your admin status
+/redeem - 🎫 Redeem a key for VIP access
+/genkey - 🔑 Generate new key (Owner only)
+/keys - 📋 List active keys (Owner only)
 /addadmin - 👑 Add admin (Owner only)
 /deladmin - 🗑️ Remove admin (Owner only)
 /listadmins - 📋 List all admins (Owner only)
 /cancel - 🛑 Stop current task
 
-📁 <b>What you'll get:</b>
+📁 What you'll get:
 
 • Account details (Name, Email, Country, Language)
 • Plan type (Premium/Standard/Basic/Mobile)
@@ -1276,15 +1420,16 @@ Copy your cookies and paste them directly in the chat
 • NFTOKEN login links for PC & Phone
 • Profiles list & more!
 
-💡 <b>Tips:</b>
+💡 Tips:
 
 • Make sure your cookies are valid and not expired
 • Use /cancel if you want to stop a running task
-• Results are exported as <code>.txt</code> files (for file upload) or as interactive messages (for text paste)
+• Results are exported as .txt files (for file upload) or as interactive messages (for text paste)
+• Use /redeem with a valid key to get VIP access (6 hours unlimited checks)
 
-👨‍💻 <b>Developer:</b> <code>Eyad Zaen</code>
+👨‍💻 Developer: Eyad Zaen
 
-🔧 <b>Bot Status:</b> Online & Ready!
+🔧 Bot Status: Online & Ready!
 """
     bot.reply_to(message, help_text, parse_mode="HTML")
 
@@ -1301,17 +1446,13 @@ def show_stats(message: Message):
         admin_tag = ""
     
     stats_text = f"""
-📊 <b>Bot Statistics</b>{admin_tag}
+📊 Bot Statistics{admin_tag}
 
-━━━━━━━━━━━━━━━━━━━━━━
+📅 Your Daily Limit:
+• Maximum checks per day: {MAX_CHECKS_PER_DAY if not is_admin(user_id, username) else 'Unlimited ♾️'}
+• Remaining today: {remaining}
 
-📅 <b>Your Daily Limit:</b>
-• Maximum checks per day: <code>{MAX_CHECKS_PER_DAY if not is_admin(user_id, username) else 'Unlimited ♾️'}</code>
-• Remaining today: <code>{remaining}</code>
-
-━━━━━━━━━━━━━━━━━━━━━━
-
-⚡ <b>Bot Status:</b>
+⚡ Bot Status:
 • Running entirely in-memory
 • No proxies needed
 • Ready to process files
@@ -1329,11 +1470,9 @@ def show_limit(message: Message):
     
     if is_admin(user_id, username):
         limit_text = f"""
-👑 <b>Admin Access</b>
+👑 Admin Access
 
-━━━━━━━━━━━━━━━━━━━━━━
-
-✅ <b>You have UNLIMITED checks!</b>
+✅ You have UNLIMITED checks!
 ♾️ No daily restrictions apply.
 
 💡 Use /stats for more information
@@ -1341,17 +1480,13 @@ def show_limit(message: Message):
     else:
         used = MAX_CHECKS_PER_DAY - (remaining if isinstance(remaining, int) else MAX_CHECKS_PER_DAY)
         limit_text = f"""
-📊 <b>Your Daily Usage</b>
+📊 Your Daily Usage
 
-━━━━━━━━━━━━━━━━━━━━━━
+✅ Used today: {used}
+📅 Remaining today: {remaining}
+🔢 Maximum per day: {MAX_CHECKS_PER_DAY}
 
-✅ <b>Used today:</b> <code>{used}</code>
-📅 <b>Remaining today:</b> <code>{remaining}</code>
-🔢 <b>Maximum per day:</b> <code>{MAX_CHECKS_PER_DAY}</code>
-
-━━━━━━━━━━━━━━━━━━━━━━
-
-🔄 Limit resets at <b>midnight UTC</b>
+🔄 Limit resets at midnight UTC
 
 💡 Use /stats for more information
 """
@@ -1362,7 +1497,7 @@ def cancel_task(message: Message):
     chat_id = message.chat.id
     if chat_id in active_tasks and not active_tasks[chat_id]['cancel']:
         active_tasks[chat_id]['cancel'] = True
-        bot.reply_to(message, "🛑 <b>Task cancellation requested.</b> Stopping thread gracefully...", parse_mode="HTML")
+        bot.reply_to(message, "🛑 Task cancellation requested. Stopping thread gracefully...", parse_mode="HTML")
     else:
         bot.reply_to(message, "⚠️ No active tasks to cancel.", parse_mode="HTML")
 
@@ -1384,7 +1519,7 @@ def handle_text_cookies(message: Message):
     user = message.from_user
     can_check, remaining = can_user_check(user.id, user.username)
     if not can_check:
-        bot.reply_to(message, f"⚠️ <b>Daily limit reached!</b>\n\nYou have used all {MAX_CHECKS_PER_DAY} checks for today.\nPlease try again tomorrow.\n\n🔄 Limit resets at midnight UTC.", parse_mode="HTML")
+        bot.reply_to(message, f"⚠️ Daily limit reached!\n\nYou have used all {MAX_CHECKS_PER_DAY} checks for today.\nPlease try again tomorrow.\n\n🔄 Limit resets at midnight UTC.\n\n💡 Use /redeem <key> to get VIP access for 6 hours.", parse_mode="HTML")
         return
     
     if "NetflixId" in text or ".netflix.com" in text:
@@ -1474,60 +1609,60 @@ def process_file_in_thread(chat_id, bundles, status_msg_id, is_text_input=False)
             except: pass
 
     try:
-        final_text = ("🛑 <b>Task Cancelled by User.</b>\n\n" if active_tasks[chat_id]['cancel'] else "✅ <b>Processing Complete!</b>\n\n") + build_status_message(stats, total_cookies, start_time)
+        final_text = ("🛑 Task Cancelled by User.\n\n" if active_tasks[chat_id]['cancel'] else "✅ Processing Complete!\n\n") + build_status_message(stats, total_cookies, start_time)
         bot.edit_message_text(final_text, chat_id, status_msg_id, parse_mode="HTML")
     except: pass
 
     if is_text_input:
-        bot.send_message(chat_id, "📤 <b>Sending results with interactive buttons...</b>", parse_mode="HTML")
+        bot.send_message(chat_id, "📤 Sending results with interactive buttons...", parse_mode="HTML")
         
         accounts_sent = False
         
         if results_by_plan["Premium"]:
             accounts_sent = True
-            bot.send_message(chat_id, f"👑 <b>PREMIUM ACCOUNTS</b> ({len(results_by_plan['Premium'])})\n{'='*30}", parse_mode="HTML")
+            bot.send_message(chat_id, f"👑 PREMIUM ACCOUNTS ({len(results_by_plan['Premium'])})\n{'='*30}", parse_mode="HTML")
             for i, (acc_text, nftoken_data) in enumerate(results_by_plan["Premium"], 1):
                 keyboard = create_result_buttons(nftoken_data)
                 if len(acc_text) > 3500:
                     parts = [acc_text[j:j+3500] for j in range(0, len(acc_text), 3500)]
                     for idx, part in enumerate(parts):
                         if idx == len(parts)-1:
-                            bot.send_message(chat_id, f"📺 <b>Premium #{i}</b> (Part {idx+1}/{len(parts)})\n{part}", parse_mode="HTML", reply_markup=keyboard)
+                            bot.send_message(chat_id, f"📺 Premium #{i} (Part {idx+1}/{len(parts)})\n{part}", parse_mode="HTML", reply_markup=keyboard)
                         else:
-                            bot.send_message(chat_id, f"📺 <b>Premium #{i}</b> (Part {idx+1}/{len(parts)})\n{part}", parse_mode="HTML")
+                            bot.send_message(chat_id, f"📺 Premium #{i} (Part {idx+1}/{len(parts)})\n{part}", parse_mode="HTML")
                 else:
-                    bot.send_message(chat_id, f"📺 <b>Premium #{i}</b>\n{acc_text}", parse_mode="HTML", reply_markup=keyboard)
+                    bot.send_message(chat_id, f"📺 Premium #{i}\n{acc_text}", parse_mode="HTML", reply_markup=keyboard)
         
         if results_by_plan["Standard"]:
             accounts_sent = True
-            bot.send_message(chat_id, f"🍿 <b>STANDARD ACCOUNTS</b> ({len(results_by_plan['Standard'])})\n{'='*30}", parse_mode="HTML")
+            bot.send_message(chat_id, f"🍿 STANDARD ACCOUNTS ({len(results_by_plan['Standard'])})\n{'='*30}", parse_mode="HTML")
             for i, (acc_text, nftoken_data) in enumerate(results_by_plan["Standard"], 1):
                 keyboard = create_result_buttons(nftoken_data)
                 if len(acc_text) > 3500:
                     parts = [acc_text[j:j+3500] for j in range(0, len(acc_text), 3500)]
                     for idx, part in enumerate(parts):
                         if idx == len(parts)-1:
-                            bot.send_message(chat_id, f"📺 <b>Standard #{i}</b> (Part {idx+1}/{len(parts)})\n{part}", parse_mode="HTML", reply_markup=keyboard)
+                            bot.send_message(chat_id, f"📺 Standard #{i} (Part {idx+1}/{len(parts)})\n{part}", parse_mode="HTML", reply_markup=keyboard)
                         else:
-                            bot.send_message(chat_id, f"📺 <b>Standard #{i}</b> (Part {idx+1}/{len(parts)})\n{part}", parse_mode="HTML")
+                            bot.send_message(chat_id, f"📺 Standard #{i} (Part {idx+1}/{len(parts)})\n{part}", parse_mode="HTML")
                 else:
-                    bot.send_message(chat_id, f"📺 <b>Standard #{i}</b>\n{acc_text}", parse_mode="HTML", reply_markup=keyboard)
+                    bot.send_message(chat_id, f"📺 Standard #{i}\n{acc_text}", parse_mode="HTML", reply_markup=keyboard)
         
         if results_by_plan["Basic"] or results_by_plan["Mobile"]:
             all_basic = results_by_plan["Basic"] + results_by_plan["Mobile"]
             accounts_sent = True
-            bot.send_message(chat_id, f"📱 <b>BASIC/MOBILE ACCOUNTS</b> ({len(all_basic)})\n{'='*30}", parse_mode="HTML")
+            bot.send_message(chat_id, f"📱 BASIC/MOBILE ACCOUNTS ({len(all_basic)})\n{'='*30}", parse_mode="HTML")
             for i, (acc_text, nftoken_data) in enumerate(all_basic, 1):
                 keyboard = create_result_buttons(nftoken_data)
                 if len(acc_text) > 3500:
                     parts = [acc_text[j:j+3500] for j in range(0, len(acc_text), 3500)]
                     for idx, part in enumerate(parts):
                         if idx == len(parts)-1:
-                            bot.send_message(chat_id, f"📺 <b>Basic #{i}</b> (Part {idx+1}/{len(parts)})\n{part}", parse_mode="HTML", reply_markup=keyboard)
+                            bot.send_message(chat_id, f"📺 Basic #{i} (Part {idx+1}/{len(parts)})\n{part}", parse_mode="HTML", reply_markup=keyboard)
                         else:
-                            bot.send_message(chat_id, f"📺 <b>Basic #{i}</b> (Part {idx+1}/{len(parts)})\n{part}", parse_mode="HTML")
+                            bot.send_message(chat_id, f"📺 Basic #{i} (Part {idx+1}/{len(parts)})\n{part}", parse_mode="HTML")
                 else:
-                    bot.send_message(chat_id, f"📺 <b>Basic #{i}</b>\n{acc_text}", parse_mode="HTML", reply_markup=keyboard)
+                    bot.send_message(chat_id, f"📺 Basic #{i}\n{acc_text}", parse_mode="HTML", reply_markup=keyboard)
         
         if not accounts_sent:
             bot.send_message(chat_id, "⚠️ No working accounts were found.", parse_mode="HTML")
@@ -1541,7 +1676,7 @@ def process_file_in_thread(chat_id, bundles, status_msg_id, is_text_input=False)
                 file_content = "\n\n\n\n".join([acc_text for acc_text, _ in accounts])
                 doc = io.BytesIO(file_content.encode('utf-8', errors='replace'))
                 doc.name = f"{plan_name.upper()}_ACCOUNTS.txt"
-                bot.send_document(chat_id, doc, caption=f"📁 <b>{plan_name.upper()} ACCOUNTS</b> ({len(accounts)})", parse_mode="HTML")
+                bot.send_document(chat_id, doc, caption=f"📁 {plan_name.upper()} ACCOUNTS ({len(accounts)})", parse_mode="HTML")
         
         if not files_sent: 
             bot.send_message(chat_id, "⚠️ No working accounts were found.", parse_mode="HTML")
@@ -1564,7 +1699,7 @@ def handle_docs(message: Message):
         user = message.from_user
         can_check, remaining = can_user_check(user.id, user.username)
         if not can_check:
-            bot.reply_to(message, f"⚠️ <b>Daily limit reached!</b>\n\nYou have used all {MAX_CHECKS_PER_DAY} checks for today.\nPlease try again tomorrow.\n\n🔄 Limit resets at midnight UTC.", parse_mode="HTML")
+            bot.reply_to(message, f"⚠️ Daily limit reached!\n\nYou have used all {MAX_CHECKS_PER_DAY} checks for today.\nPlease try again tomorrow.\n\n🔄 Limit resets at midnight UTC.\n\n💡 Use /redeem <key> to get VIP access for 6 hours.", parse_mode="HTML")
             return
 
         bot.reply_to(message, "📥 Loading file into memory... Please wait.", parse_mode="HTML")
