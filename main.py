@@ -1411,7 +1411,10 @@ def send_welcome(message: Message):
     # تسجيل المستخدم للـ broadcast
     known_users.add(user_id)
     
-    if is_admin(user_id, username):
+    if is_owner(user_id):
+        limit_text = "Unlimited ♾️"
+        admin_badge = " 👑 (Owner)"
+    elif is_admin(user_id, username):
         limit_text = "Unlimited ♾️"
         admin_badge = " 👑 (Admin)"
     else:
@@ -1429,7 +1432,7 @@ def send_welcome(message: Message):
 
 📌 How to use the bot:
 
-1️⃣ Send a .txt, .json, or .zip file 
+1️⃣ Send a .txt, .json, or .zip file
 2️⃣ Or paste cookies directly in the chat
 3️⃣ The bot will automatically extract Accounts
 4️⃣ Get detailed information about each Account
@@ -1462,7 +1465,7 @@ def send_welcome(message: Message):
 ✅ NFTOKEN generation for PC & Phone login
 ✅ VIP system for temporary unlimited access
 
-📤 Just send me a file or paste cookies ✨
+📤 Just send me a file or Paste Cookies ✨
 
 💡 Tip: Made By Eyad
 """
@@ -1531,7 +1534,9 @@ def show_stats(message: Message):
     username = user.username
     remaining = get_remaining_checks(user_id, username)
     
-    if is_admin(user_id, username):
+    if is_owner(user_id):
+        admin_tag = " 👑 (Owner - Unlimited)"
+    elif is_admin(user_id, username):
         admin_tag = " 👑 (Admin - Unlimited)"
     else:
         admin_tag = ""
