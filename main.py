@@ -19,7 +19,7 @@ from telebot.types import Message, BotCommand, InlineKeyboardMarkup, InlineKeybo
 # ==========================================
 # Telegram Bot Configuration
 # ==========================================
-# قراءة التوكن من المتغيرات البيئية (الأمان)
+# قراءة التوكن من المتغيرات البيئية (للرفع على السيرفر)
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("⚠️ Please set BOT_TOKEN environment variable!")
@@ -39,6 +39,11 @@ ADMIN_USERNAMES = []
 
 MAX_CHECKS_PER_DAY = 5
 user_checks = {}
+
+# ==========================================
+# Broadcast System
+# ==========================================
+known_users = set()  # تخزين معرفات المستخدمين الذين تفاعلوا مع البوت
 
 # ==========================================
 # VIP Keys System (Temporary Admin for 6 hours)
@@ -1033,6 +1038,7 @@ def setup_bot_commands():
         BotCommand("addadmin", "👑 Add admin (Owner only)"),
         BotCommand("deladmin", "🗑️ Remove admin (Owner only)"),
         BotCommand("listadmins", "📋 List all admins (Owner only)"),
+        BotCommand("broadcast", "📢 Send message to all users (Owner only)"),
         BotCommand("cancel", "🛑 Stop task")
     ])
 
@@ -1089,6 +1095,56 @@ def build_status_message(stats, total, start_time):
         f"<b>ETA:</b> {eta:.1f}s remaining\n\n"
         f"⚠️ Use /cancel to stop this task"
     )
+
+# ==========================================
+# Broadcast System (Owner only)
+# ==========================================
+def confirm_broadcast(message: Message, broadcast_text):
+    user_id = message.from_user.id
+    
+    if not is_owner(user_id):
+        return
+    
+    if message.text.upper() == "YES":
+        bot.reply_to(message, f"📤 Sending broadcast to <b>{len(known_users)}</b> users...", parse_mode="HTML")
+        
+        success_count = 0
+        fail_count = 0
+        
+        for uid in known_users:
+            try:
+                bot.send_message(uid, f"📢 <b>Announcement from Bot Owner</b>\n\n{broadcast_text}", parse_mode="HTML")
+                success_count += 1
+                time.sleep(0.05)
+            except Exception:
+                fail_count += 1
+        
+        bot.reply_to(message, f"✅ Broadcast Completed!\n\n📨 Sent: <b>{success_count}</b>\n❌ Failed: <b>{fail_count}</b>", parse_mode="HTML")
+    else:
+        bot.reply_to(message, "❌ Broadcast cancelled.", parse_mode="HTML")
+
+@bot.message_handler(commands=['broadcast'])
+def broadcast_message(message: Message):
+    user_id = message.from_user.id
+    
+    if not is_owner(user_id):
+        bot.reply_to(message, "❌ Access Denied!\n\nOnly the bot owner can use this command.", parse_mode="HTML")
+        return
+    
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        bot.reply_to(message, "❌ Usage:\n\n<code>/broadcast &lt;message&gt;</code>\n\nExample:\n<code>/broadcast Hello everyone! The bot will be down for 1 hour.</code>", parse_mode="HTML")
+        return
+    
+    broadcast_text = parts[1]
+    
+    if not known_users:
+        bot.reply_to(message, "⚠️ No users have interacted with the bot yet.", parse_mode="HTML")
+        return
+    
+    confirm_msg = bot.reply_to(message, f"⚠️ Are you sure you want to send this message to <b>{len(known_users)}</b> users?\n\nMessage:\n<code>{broadcast_text[:200]}</code>\n\nReply with <b>YES</b> to confirm, or <b>NO</b> to cancel.", parse_mode="HTML")
+    
+    bot.register_next_step_handler(confirm_msg, confirm_broadcast, broadcast_text)
 
 # ==========================================
 # أوامر المشرفين (للمطور الرئيسي فقط)
@@ -1352,6 +1408,9 @@ def send_welcome(message: Message):
     user_id = message.from_user.id
     username = message.from_user.username
     
+    # تسجيل المستخدم للـ broadcast
+    known_users.add(user_id)
+    
     if is_admin(user_id, username):
         limit_text = "Unlimited ♾️"
         admin_badge = " 👑 (Admin)"
@@ -1372,7 +1431,7 @@ def send_welcome(message: Message):
 
 1️⃣ Send a .txt, .json, or .zip file 
 2️⃣ Or paste cookies directly in the chat
-3️⃣ The bot will Automatically extract Accounts
+3️⃣ The bot will automatically extract Accounts
 4️⃣ Get detailed information about each Account
 
 📋 Bot Commands:
@@ -1390,6 +1449,7 @@ def send_welcome(message: Message):
 /addadmin - 👑 Add admin (Owner only)
 /deladmin - 🗑️ Remove admin (Owner only)
 /listadmins - 📋 List all admins (Owner only)
+/broadcast - 📢 Send message to all users (Owner only)
 /cancel - 🛑 Stop current task
 
 ⚡ Features:
@@ -1439,6 +1499,7 @@ Copy your cookies and paste them directly in the chat
 /addadmin - 👑 Add admin (Owner only)
 /deladmin - 🗑️ Remove admin (Owner only)
 /listadmins - 📋 List all admins (Owner only)
+/broadcast - 📢 Send message to all users (Owner only)
 /cancel - 🛑 Stop current task
 
 📁 What you'll get:
@@ -1547,6 +1608,11 @@ def handle_text_cookies(message: Message):
         return
     
     user = message.from_user
+    user_id = user.id
+    
+    # تسجيل المستخدم للـ broadcast
+    known_users.add(user_id)
+    
     can_check, remaining = can_user_check(user.id, user.username)
     if not can_check:
         bot.reply_to(message, f"⚠️ Daily limit reached!\n\nYou have used all {MAX_CHECKS_PER_DAY} checks for today.\nPlease try again tomorrow.\n\n🔄 Limit resets at midnight UTC.\n\n💡 Use /redeem <key> to get VIP access for 6 hours.", parse_mode="HTML")
@@ -1727,6 +1793,11 @@ def handle_docs(message: Message):
             return
 
         user = message.from_user
+        user_id = user.id
+        
+        # تسجيل المستخدم للـ broadcast
+        known_users.add(user_id)
+        
         can_check, remaining = can_user_check(user.id, user.username)
         if not can_check:
             bot.reply_to(message, f"⚠️ Daily limit reached!\n\nYou have used all {MAX_CHECKS_PER_DAY} checks for today.\nPlease try again tomorrow.\n\n🔄 Limit resets at midnight UTC.\n\n💡 Use /redeem <key> to get VIP access for 6 hours.", parse_mode="HTML")
