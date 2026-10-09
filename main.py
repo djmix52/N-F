@@ -19,21 +19,17 @@ from telebot.types import Message, BotCommand, InlineKeyboardMarkup, InlineKeybo
 # ==========================================
 # Telegram Bot Configuration
 # ==========================================
-# قراءة التوكن من المتغيرات البيئية (للرفع على السيرفر)
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("⚠️ Please set BOT_TOKEN environment variable!")
 
-# Disable insecure request warnings
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
 # ==========================================
 # Owner & Admin Configuration
 # ==========================================
-# المطور الرئيسي (صاحب البوت) - فقط من يمكنه استخدام أوامر الإدارة
-OWNER_USER_IDS = [6889113186]  # ضع معرف التليجرام الخاص بك هنا فقط
+OWNER_USER_IDS = [6889113186]
 
-# قائمة المشرفين الدائمين (لن تنتهي صلاحيتهم)
 ADMIN_USER_IDS = []
 ADMIN_USERNAMES = []
 
@@ -43,22 +39,20 @@ user_checks = {}
 # ==========================================
 # Broadcast System
 # ==========================================
-known_users = set()  # تخزين معرفات المستخدمين الذين تفاعلوا مع البوت
+known_users = set()
 
 # ==========================================
 # VIP Keys System (Temporary Admin for 6 hours)
 # ==========================================
-active_keys = {}  # {key: expiry_timestamp}
-temp_admins = {}  # {user_id: expiry_timestamp}
+active_keys = {}
+temp_admins = {}
 
 def generate_key():
-    """توليد كود عشوائي مكون من 8 أحرف وأرقام"""
     part1 = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
     part2 = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
     return f"{part1}-{part2}"
 
 def is_temp_admin(user_id):
-    """التحقق إذا كان المستخدم VIP مؤقت"""
     if user_id in temp_admins:
         if time.time() < temp_admins[user_id]:
             return True
@@ -67,7 +61,6 @@ def is_temp_admin(user_id):
     return False
 
 def is_admin(user_id, username=None):
-    """التحقق إذا كان المستخدم مطوراً (له صلاحيات غير محدودة)"""
     if user_id in OWNER_USER_IDS:
         return True
     if user_id in ADMIN_USER_IDS:
@@ -79,11 +72,9 @@ def is_admin(user_id, username=None):
     return False
 
 def is_owner(user_id):
-    """التحقق إذا كان المستخدم هو صاحب البوت (المطور الرئيسي)"""
     return user_id in OWNER_USER_IDS
 
 def can_user_check(user_id, username=None):
-    """التحقق من عدد المحاولات المتبقية للمستخدم"""
     if is_admin(user_id, username):
         return True, float('inf')
     
@@ -105,7 +96,6 @@ def can_user_check(user_id, username=None):
     return True, remaining
 
 def increment_user_check(user_id, username=None):
-    """زيادة عداد المحاولات للمستخدم"""
     if is_admin(user_id, username):
         return
     
@@ -119,7 +109,6 @@ def increment_user_check(user_id, username=None):
         user_checks[user_id]['count'] += 1
 
 def get_remaining_checks(user_id, username=None):
-    """الحصول على عدد المحاولات المتبقية للمستخدم"""
     if is_admin(user_id, username):
         return "Unlimited ♾️"
     
@@ -393,6 +382,70 @@ def extract_first_match(response_text, patterns, flags=0):
                 return decoded
     return None
 
+# ==========================================
+# ✅ NEW: استخراج طريقة الدفع بعدة طرق
+# ==========================================
+def extract_payment_method_detailed(response_text):
+    """
+    بيدور على طريقة الدفع بعدة طرق مختلفة
+    """
+    if not response_text:
+        return None
+    
+    # 1️⃣ طرق الدفع المباشرة (JSON keys)
+    direct_patterns = [
+        r'"paymentMethodType"\s*:\s*"([^"]+)"',
+        r'"paymentType"\s*:\s*"([^"]+)"',
+        r'"paymentMethodName"\s*:\s*"([^"]+)"',
+        r'"paymentOptionLogo"\s*:\s*"([^"]+)"',
+        r'"paymentMethod"\s*:\s*"([^"]+)"',
+        r'"cardType"\s*:\s*"([^"]+)"',
+        r'"cardBrand"\s*:\s*"([^"]+)"',
+        r'"paymentMethodDisplayName"\s*:\s*"([^"]+)"',
+        r'"paymentMethodDisplay"\s*:\s*"([^"]+)"',
+        r'"payer"\s*:\s*"([^"]+)"',
+        r'"paymentProvider"\s*:\s*"([^"]+)"',
+        r'"paymentOption"\s*:\s*"([^"]+)"',
+        r'"instrumentType"\s*:\s*"([^"]+)"',
+    ]
+    
+    for pattern in direct_patterns:
+        match = re.search(pattern, response_text, re.IGNORECASE)
+        if match:
+            value = decode_netflix_value(match.group(1))
+            if value and value.lower() not in ['unknown', 'null', 'none', 'undefined', '']:
+                return value
+    
+    # 2️⃣ آخر 4 أرقام من الكارت
+    last4_match = re.search(r'ending in[^\d]{0,10}(\d{4})', response_text, re.IGNORECASE)
+    if last4_match:
+        return f"Card ending in {last4_match.group(1)}"
+    
+    # 3️⃣ masked card ****1234
+    masked_match = re.search(r'[*•]{2,}\s*(\d{4})\b', response_text)
+    if masked_match:
+        return f"Card ending in {masked_match.group(1)}"
+    
+    # 4️⃣ أسماء معروفة
+    known_methods = [
+        'Visa', 'Mastercard', 'American Express', 'Amex', 'Discover',
+        'PayPal', 'Gift Card', 'OVO', 'iTunes', 'Google Play',
+        'Bank Transfer', 'Sofort', 'IDEAL', 'Giropay', 'Boleto',
+        'Direct Debit', 'Prepaid', 'Credit Card', 'Debit Card',
+        'Mobile Billing', 'Carrier Billing', 'PIX', 'Dana', 'GoPay',
+    ]
+    
+    found_methods = []
+    for method in known_methods:
+        if re.search(r'\b' + re.escape(method) + r'\b', response_text, re.IGNORECASE):
+            if method not in found_methods:
+                found_methods.append(method)
+    
+    if found_methods:
+        return found_methods[0]
+    
+    return None
+
 def parse_boolean_value(value):
     if isinstance(value, bool): return value
     if isinstance(value, (int, float)): return value == 1 if value in (0, 1) else None
@@ -591,12 +644,29 @@ def extract_info_from_graphql_payload(response_text):
 
     video_quality = decode_netflix_value(c_plan.get("videoQuality")) or decode_netflix_value(n_plan.get("videoQuality"))
     
+    # ✅ التعديل: استخدام الدالة الجديدة لاستخراج payment method
     payment_method = None
     if pay_m:
-        payment_method = decode_netflix_value(pay_m.get("paymentOptionLogo", {}).get("paymentOptionLogo") or 
-                                              pay_m.get("displayText") or 
-                                              pay_m.get("type") or 
-                                              growth.get("payer"))
+        # نجرب كل الحقول المحتملة
+        for key in ("paymentOptionLogo", "displayText", "type", "paymentMethodType",
+                    "paymentMethod", "cardType", "cardBrand", "paymentMethodName",
+                    "paymentProvider", "paymentOption", "instrumentType"):
+            val = pay_m.get(key)
+            if isinstance(val, dict):
+                val = val.get(key) or val.get("value") or val.get("displayText")
+            val = decode_netflix_value(val)
+            if val and val.lower() not in ['unknown', 'null', 'none', 'undefined', '']:
+                payment_method = val
+                break
+    
+    # ✅ fallback: ندور على payment method في الـ response كله
+    if not payment_method:
+        try:
+            payment_method = extract_payment_method_detailed(json.dumps(payload))
+        except:
+            pass
+    if not payment_method:
+        payment_method = decode_netflix_value(growth.get("payer"))
 
     info = {
         "accountOwnerName": decode_netflix_value(prof.get("name")),
@@ -641,9 +711,14 @@ def extract_info(response_text):
         r'"paymentMethod"\s*:\s*"([^"]+)"',
         r'"method"\s*:\s*"([^"]+)"',
         r'"cardType"\s*:\s*"([^"]+)"',
+        r'"cardBrand"\s*:\s*"([^"]+)"',
         r'"payer"\s*:\s*"([^"]+)"',
         r'"billingMethod"\s*:\s*"([^"]+)"',
-        r'"billingType"\s*:\s*"([^"]+)"'
+        r'"billingType"\s*:\s*"([^"]+)"',
+        r'"paymentProvider"\s*:\s*"([^"]+)"',
+        r'"paymentOption"\s*:\s*"([^"]+)"',
+        r'"instrumentType"\s*:\s*"([^"]+)"',
+        r'"paymentMethodDisplayName"\s*:\s*"([^"]+)"',
     ]
     
     phone_patterns = [
@@ -680,7 +755,8 @@ def extract_info(response_text):
         "localizedPlanName": extract_first_match(response_text, [r'"localizedPlanName"\s*:\s*"([^"]+)"', r'localizedPlanName":\{"fieldType":"String","value":"([^"]+)"', r'"planName"\s*:\s*"([^"]+)"']),
         "planPrice": extract_first_match(response_text, [r'"planPriceDisplay"\s*:\s*"([^"]+)"']),
         "videoQuality": extract_first_match(response_text, video_patterns),
-        "paymentMethodType": extract_first_match(response_text, payment_patterns),
+        # ✅ التعديل: استخدام الدالة الجديدة
+        "paymentMethodType": extract_payment_method_detailed(response_text) or extract_first_match(response_text, payment_patterns),
         "phoneNumber": extract_first_match(response_text, phone_patterns),
         "holdStatus": extract_bool_value(response_text, [r'"holdStatus"\s*:\s*(true|false)', r'"isUserOnHold"\s*:\s*(true|false)']),
         "showExtraMemberSection": extract_bool_value(response_text, [r'"showExtraMemberSection"\s*:\s*(true|false)']),
@@ -699,13 +775,20 @@ def extract_info(response_text):
         if membership_date:
             extracted["nextBillingDate"] = membership_date
     
-    if not extracted.get("paymentMethodType") or extracted.get("paymentMethodType") == "UNKNOWN":
-        payment_from_plan = extract_first_match(response_text, [
-            r'"planPriceDisplay"\s*:\s*"([^"]+)"',
-            r'"priceDisplay"\s*:\s*"([^"]+)"'
-        ])
-        if payment_from_plan:
-            extracted["paymentMethodType"] = payment_from_plan
+    # ✅ التعديل: fallback لـ payment
+    if not extracted.get("paymentMethodType") or extracted.get("paymentMethodType") in ("UNKNOWN", "unknown", "Not specified"):
+        # نجرب نلاقيها من الدالة الجديدة تاني
+        payment_fallback = extract_payment_method_detailed(response_text)
+        if payment_fallback:
+            extracted["paymentMethodType"] = payment_fallback
+        else:
+            # نجرب planPrice كـ آخر حل
+            payment_from_plan = extract_first_match(response_text, [
+                r'"planPriceDisplay"\s*:\s*"([^"]+)"',
+                r'"priceDisplay"\s*:\s*"([^"]+)"'
+            ])
+            if payment_from_plan:
+                extracted["paymentMethodType"] = payment_from_plan
     
     if not extracted.get("videoQuality") or extracted.get("videoQuality") == "UNKNOWN":
         plan_name = extracted.get("localizedPlanName", "")
@@ -840,7 +923,7 @@ def create_nftoken(cookie_dict, attempts=1):
     return None, "Failed"
 
 # ==========================================
-# تنسيق للعرض داخل تليجرام (HTML - من غير روابط نصية)
+# تنسيق للعرض داخل تليجرام (HTML)
 # ==========================================
 def format_for_telegram(info, is_subscribed, nftoken_data=None):
     _, _, plan = derive_output_plan_bucket(info, is_subscribed)
@@ -855,8 +938,9 @@ def format_for_telegram(info, is_subscribed, nftoken_data=None):
     if not expiry_date or expiry_date == "UNKNOWN":
         expiry_date = "Not available"
     
+    # ✅ التعديل: payment fallback محسّن
     payment = decode_netflix_value(info.get('paymentMethodType'))
-    if not payment or payment == "UNKNOWN":
+    if not payment or payment in ['UNKNOWN', 'unknown', 'Not specified', 'null', 'None', 'undefined']:
         payment = "Not specified"
     
     video_quality = decode_netflix_value(info.get('videoQuality')) or "Not specified"
@@ -921,7 +1005,7 @@ def format_for_telegram(info, is_subscribed, nftoken_data=None):
     return "\n".join(lines)
 
 # ==========================================
-# تنسيق للملفات النصية (Plain Text - مع روابط NFTOKEN)
+# تنسيق للملفات النصية (Plain Text)
 # ==========================================
 def format_for_text_file(info, is_subscribed, nftoken_data=None):
     _, _, plan = derive_output_plan_bucket(info, is_subscribed)
@@ -936,8 +1020,9 @@ def format_for_text_file(info, is_subscribed, nftoken_data=None):
     if not expiry_date or expiry_date == "UNKNOWN":
         expiry_date = "Not available"
     
+    # ✅ التعديل: payment fallback محسّن
     payment = decode_netflix_value(info.get('paymentMethodType'))
-    if not payment or payment == "UNKNOWN":
+    if not payment or payment in ['UNKNOWN', 'unknown', 'Not specified', 'null', 'None', 'undefined']:
         payment = "Not specified"
     
     video_quality = decode_netflix_value(info.get('videoQuality')) or "Not specified"
@@ -1042,9 +1127,6 @@ def setup_bot_commands():
         BotCommand("cancel", "🛑 Stop task")
     ])
 
-# ==========================================
-# أزرار تفاعلية للنتائج (بدون زر Copy Text)
-# ==========================================
 def create_result_buttons(nftoken_data=None):
     keyboard = InlineKeyboardMarkup(row_width=2)
     
@@ -1060,9 +1142,6 @@ def create_result_buttons(nftoken_data=None):
 def handle_callback(call):
     pass
 
-# ==========================================
-# شريط التقدم - الشكل الأزرق
-# ==========================================
 def generate_progress_bar(current, total, length=20):
     if total == 0: 
         return f"[{'▒' * length}] 0.0%"
@@ -1147,7 +1226,7 @@ def broadcast_message(message: Message):
     bot.register_next_step_handler(confirm_msg, confirm_broadcast, broadcast_text)
 
 # ==========================================
-# أوامر المشرفين (للمطور الرئيسي فقط)
+# أوامر المشرفين
 # ==========================================
 @bot.message_handler(commands=['addadmin'])
 def add_admin(message: Message):
@@ -1162,7 +1241,7 @@ def add_admin(message: Message):
     try:
         command_parts = message.text.split()
         if len(command_parts) < 2:
-            bot.reply_to(message, f"❌ Usage:\n\n<code>/addadmin &lt;user_id&gt; or @username</code>\n\nExample:\n<code>/addadmin 123456789</code>\n<code>/addadmin @EyadZaen</code>", parse_mode="HTML")
+            bot.reply_to(message, f"❌ Usage:\n\n<code>/addadmin &lt;user_id&gt; or @username</code>", parse_mode="HTML")
             return
         
         target = command_parts[1]
@@ -1201,7 +1280,7 @@ def del_admin(message: Message):
     try:
         command_parts = message.text.split()
         if len(command_parts) < 2:
-            bot.reply_to(message, f"❌ Usage:\n\n<code>/deladmin &lt;user_id&gt; or @username</code>\n\nExample:\n<code>/deladmin 123456789</code>\n<code>/deladmin @EyadZaen</code>", parse_mode="HTML")
+            bot.reply_to(message, f"❌ Usage:\n\n<code>/deladmin &lt;user_id&gt; or @username</code>", parse_mode="HTML")
             return
         
         target = command_parts[1]
@@ -1311,18 +1390,18 @@ def delete_key(message: Message):
     try:
         command_parts = message.text.split()
         if len(command_parts) < 2:
-            bot.reply_to(message, f"❌ Usage:\n\n<code>/delkey &lt;key&gt;</code>\n\nExample: <code>/delkey X7K9-M3P2</code>\n\n💡 Use /keys to see all active keys.", parse_mode="HTML")
+            bot.reply_to(message, f"❌ Usage:\n\n<code>/delkey &lt;key&gt;</code>", parse_mode="HTML")
             return
         
         key = command_parts[1].upper()
         
         if key not in active_keys:
-            bot.reply_to(message, f"❌ Key not found!\n\nKey <code>{key}</code> is not active or has already expired.\n\n💡 Use /keys to see all active keys.", parse_mode="HTML")
+            bot.reply_to(message, f"❌ Key not found!", parse_mode="HTML")
             return
         
         del active_keys[key]
         
-        bot.reply_to(message, f"✅ Key Deleted!\n\n🔑 Key: <code>{key}</code>\n\nThis key can no longer be used by anyone.", parse_mode="HTML")
+        bot.reply_to(message, f"✅ Key Deleted!\n\n🔑 Key: <code>{key}</code>", parse_mode="HTML")
         
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)}", parse_mode="HTML")
@@ -1335,7 +1414,7 @@ def redeem_key(message: Message):
     try:
         command_parts = message.text.split()
         if len(command_parts) < 2:
-            bot.reply_to(message, "❌ Usage:\n\n<code>/redeem &lt;key&gt;</code>\n\nExample: <code>/redeem X7K9-M3P2</code>", parse_mode="HTML")
+            bot.reply_to(message, "❌ Usage:\n\n<code>/redeem &lt;key&gt;</code>", parse_mode="HTML")
             return
         
         key = command_parts[1].upper()
@@ -1346,7 +1425,7 @@ def redeem_key(message: Message):
         
         if time.time() > active_keys[key]:
             del active_keys[key]
-            bot.reply_to(message, "⏰ KEY EXPIRED\n\nThis key has expired and is no longer valid.\n\n💡 Contact the bot owner for a new key.", parse_mode="HTML")
+            bot.reply_to(message, "⏰ KEY EXPIRED\n\nThis key has expired and is no longer valid.", parse_mode="HTML")
             return
         
         expiry_time = active_keys[key]
@@ -1390,9 +1469,6 @@ def my_admin_status(message: Message):
     
     bot.reply_to(message, f"📊 YOUR ADMIN STATUS\n\n{status}", parse_mode="HTML")
 
-# ==========================================
-# أمر مؤقت لمعرفة معرف المستخدم
-# ==========================================
 @bot.message_handler(commands=['myid'])
 def show_my_id(message: Message):
     user_id = message.from_user.id
@@ -1400,7 +1476,7 @@ def show_my_id(message: Message):
     bot.reply_to(message, f"🆔 Your ID: <code>{user_id}</code>\n👤 Username: @{username if username else 'None'}", parse_mode="HTML")
 
 # ==========================================
-# رسالة الترحيب (لـ /start)
+# رسالة الترحيب
 # ==========================================
 @bot.message_handler(commands=['start'])
 def send_welcome(message: Message):
@@ -1408,7 +1484,6 @@ def send_welcome(message: Message):
     user_id = message.from_user.id
     username = message.from_user.username
     
-    # تسجيل المستخدم للـ broadcast
     known_users.add(user_id)
     
     if is_owner(user_id):
@@ -1471,9 +1546,6 @@ def send_welcome(message: Message):
 """
     bot.reply_to(message, welcome_text, parse_mode="HTML")
 
-# ==========================================
-# رسالة المساعدة (لـ /help)
-# ==========================================
 @bot.message_handler(commands=['help'])
 def send_help(message: Message):
     help_text = """
@@ -1597,9 +1669,6 @@ def cancel_task(message: Message):
     else:
         bot.reply_to(message, "⚠️ No active tasks to cancel.", parse_mode="HTML")
 
-# ==========================================
-# معالج النصوص - للكوكيز المكتوبة مباشرة
-# ==========================================
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def handle_text_cookies(message: Message):
     chat_id = message.chat.id
@@ -1615,7 +1684,6 @@ def handle_text_cookies(message: Message):
     user = message.from_user
     user_id = user.id
     
-    # تسجيل المستخدم للـ broadcast
     known_users.add(user_id)
     
     can_check, remaining = can_user_check(user.id, user.username)
@@ -1800,7 +1868,6 @@ def handle_docs(message: Message):
         user = message.from_user
         user_id = user.id
         
-        # تسجيل المستخدم للـ broadcast
         known_users.add(user_id)
         
         can_check, remaining = can_user_check(user.id, user.username)
